@@ -1,4 +1,4 @@
-const { default: mongoose } = require("mongoose")
+const mongoose = require("mongoose")
 
 const dbConnect = () => {
    try{
@@ -6,6 +6,7 @@ const dbConnect = () => {
        console.log("Database Connected Successfully");
    }
    catch(error) {
+    console.log(`Error:${error.message}`);
    }
 }
 module.exports = dbConnect;

@@ -1,18 +1,28 @@
 const express = require('express');
-const { createPost, getAllPosts, likePost, unlikePost, deletePost, getPostsByUser, getPostById, addComment, addReply, toggleLike, getReplies, editPost } = require('../controller/Postcontroller');
+const {
+  createPost,
+  getAllPosts,
+  toggleLike,
+  deletePost,
+  editPost,
+  getPostsByUser,
+  getPostById,
+  addComment,
+  addReply,
+  getReplies
+} = require('../controller/Postcontroller');
 
 const router = express.Router();
 
-// Removed authMiddleware from the create route
-router.post('/create', createPost); // Create a post without authentication
+router.post('/create', createPost); // Create a post
 router.get('/', getAllPosts); // Get all posts
-router.put('/:postId/unlike', unlikePost); // Unlike a post
+router.put('/:postId/like', toggleLike); // Like a post
 router.delete('/:postId', deletePost); // Delete a post
-router.get('/', getPostsByUser);
-router.get('/:postId',getPostById)
-router.post('/comment', addComment);
-router.post('/comment/reply', addReply);
-router.put('/:postId/like', toggleLike);
-router.put('/:postId',editPost);
-router.get('/comments/:commentId/replies', getReplies);
+router.put('/:postId', editPost); // Edit a post
+router.get('/user/:userId', getPostsByUser); // Get posts by user
+router.get('/:postId', getPostById); // Get post by ID
+router.post('/comment', addComment); // Add comment to post
+router.post('/comment/reply', addReply); // Add reply to comment
+router.get('/comments/:commentId/replies', getReplies); // Get replies for a comment
+
 module.exports = router;

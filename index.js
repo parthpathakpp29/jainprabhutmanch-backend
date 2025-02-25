@@ -1,17 +1,15 @@
 const express = require("express");
-const http = require("http");  // Import http module
+const http = require("http");
 const dbConnect = require("./config/dbConnect");
 const app = express();
 const socketIo = require('socket.io');
 const dotenv = require("dotenv").config();
-const PORT =  4000 ;
+const PORT = 4000;
 const path = require('path');
-console.log(path.join(__dirname, "uploads"));
 const upload = require('./middlewares/upload')
 const bodyParser = require("body-parser");
 const { notFound, errorHandler } = require("./middlewares/errorHandler");
 const cors = require("cors");
-const adminRouter = require('./admin/route/adminRoute');
 const authRouter = require('./routes/authRoute')
 const { logMiddleware } = require('./middlewares/authMiddlewares');
 const jainAdharRouter = require('./routes/jainAdharRoute');
@@ -35,68 +33,87 @@ const reportingRoutes = require('./routes/reportingRoutes')
 const suggestionComplaintRoutes = require('./routes/suggestionComplaintRoutes')
 const granthRoutes = require('./routes/jainGranthRoutes');
 const jainItihasRoutes = require('./routes/jainItihasRoutes');
-const jainAdharRoutes = require('./routes/jainAdharLoginRoutes');
 const storyRoutes = require('./routes/storyRoutes');
 const notificationRoutes = require('./routes/notificationRoutes')
 const Story = require('./model/storyModel')
 const govtYojanaRoutes = require('./routes/govtYojanaRoutes')
+
+// Connect to database
 dbConnect();
+
+// Middleware
 app.use(cors());
 app.use(cors({ origin: "*" }));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended:false}));
-
-app.use("/api/uploads", express.static(path.join(__dirname, "uploads")));
-app.use(express.json());
-
-  
-// Function to delete expired stories every hour
-const deleteExpiredStories = async () => {
-  try {
-      const expiredTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const result = await Story.deleteMany({ createdAt: { $lt: expiredTime } });
-      console.log(`Deleted ${result.deletedCount} expired stories`);
-  } catch (error) {
-      console.error("Error deleting expired stories:", error);
-  }
-};
-// Run the cleanup job every hour
-setInterval(deleteExpiredStories, 60 * 60 * 1000);
-
 app.use(logMiddleware);
-app.use("/api/user",authRouter)
-app.use("/api/JainAadhar",jainAdharRouter);
+
+// Routes
+app.use("/api/auth", authRouter);
+app.use("/api/jain-aadhar", jainAdharRouter);
 app.use("/api/friendship", friendshipRoutes);
-app.use('/api/posts', postRoutes);
-app.use('/api/units',unitRoutes );
-app.use('/api/panchayat',panchayatRoute );
-app.use('/api/messages', messageRoutes);
-app.use('/api/jain-vyapar', jainVyaparRoutes);
-app.use('/api/tirthsanrakshan', tirthSanrakshanRoute);
-app.use('/api/sadhuInfo', sadhuInfoRoutes);
-app.use('/api/Shanghatan', ShanghatanIdPasswordRoute);
-app.use('/api/panchayat', panchayatIdPasswordRoutes);
-app.use('/api/tirth', tirthIdPasswordRoutes);
-app.use('/api/jainvyapar', jainVyaparRoute);
-app.use('/api/sadhu', sadhuRoutes);
-app.use('/api/biodata', biodataRoutes);
+app.use("/api/posts", postRoutes);
+app.use("/api/unit", unitRoutes);
+app.use("/api/panchayat", panchayatRoute);
+app.use("/api/messages", messageRoutes);
+app.use("/api/jainvyapar", jainVyaparRoutes);
+app.use("/api/tirthsanrakshan", tirthSanrakshanRoute);
+app.use("/api/sadhuinfo", sadhuInfoRoutes);
+app.use("/api/shanghatan", ShanghatanIdPasswordRoute);
+app.use("/api/panchayatidpassword", panchayatIdPasswordRoutes);
+app.use("/api/tirthidpassword", tirthIdPasswordRoutes);
+app.use("/api/jainvyaparidpassword", jainVyaparRoute);
+app.use("/api/sadhu", sadhuRoutes);
+app.use("/api/biodata", biodataRoutes);
+app.use("/api/groupchat", groupChatRoutes);
 app.use("/api/rojgar", rojgarRoutes);
-app.use('/api/groupchat', groupChatRoutes);
-app.use('/api/reports', reportingRoutes);
+app.use("/api/reporting", reportingRoutes);
 app.use('/api/suggestion-complaint', suggestionComplaintRoutes);
 app.use("/api/granth", granthRoutes);
 app.use("/api/jainitihas", jainItihasRoutes);
-app.use('/api/jainadhar', jainAdharRoutes);
 app.use('/api/stories', storyRoutes);
 app.use('/api/notification', notificationRoutes);
 app.use('/api/yojana', govtYojanaRoutes);
 
-// Admin API routes
-app.use("/api/admin", adminRouter);
-
+// Error handling
 app.use(notFound);
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-    console.log(`Server is running at PORT ${PORT}`);
+// Create HTTP server
+const server = http.createServer(app);
+
+// Socket.io setup
+const io = socketIo(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+// Socket.io connection handling
+io.on('connection', (socket) => {
+  console.log('A user connected');
+  
+  socket.on('disconnect', () => {
+    console.log('User disconnected');
+  });
+});
+
+// Story cleanup job
+async function deleteExpiredStories() {
+  try {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await Story.deleteMany({ createdAt: { $lt: twentyFourHoursAgo } });
+    console.log('Expired stories deleted');
+  } catch (error) {
+    console.error('Error deleting expired stories:', error);
+  }
+}
+
+// Run the cleanup job every hour
+setInterval(deleteExpiredStories, 60 * 60 * 1000);
+
+// Start server
+server.listen(PORT, () => {
+  console.log(`Server is running at PORT ${PORT}`);
 });
