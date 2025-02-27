@@ -1,4 +1,23 @@
 const bcrypt = require('bcrypt');
+const passwordValidator = require('password-validator');
+
+// Create password schema
+const passwordSchema = new passwordValidator();
+passwordSchema
+  .is().min(8)
+  .has().uppercase()
+  .has().lowercase()
+  .has().digits(1)
+  .has().symbols(1)
+  .has().not().spaces();
+
+const validatePassword = (password) => {
+  return passwordSchema.validate(password);
+};
+
+const getPasswordErrors = (password) => {
+  return passwordSchema.validate(password, { list: true });
+};
 
 const hashPassword = async function (next) {
   if (!this.isModified('password')) {
@@ -24,4 +43,6 @@ const isPasswordMatched = async function (enteredPassword) {
 module.exports = {
   hashPassword,
   isPasswordMatched,
+  validatePassword,
+  getPasswordErrors
 };

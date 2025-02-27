@@ -2,54 +2,59 @@ const express = require("express");
 const http = require("http");
 const dbConnect = require("./config/dbConnect");
 const app = express();
-const socketIo = require('socket.io');
 const dotenv = require("dotenv").config();
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
 const path = require('path');
-const upload = require('./middlewares/upload')
+const upload = require('./middlewares/uploadMiddleware');
 const bodyParser = require("body-parser");
 const { notFound, errorHandler } = require("./middlewares/errorHandler");
 const cors = require("cors");
-const authRouter = require('./routes/authRoute')
+const authRouter = require('./routes/UserRegistrationRoutes/authRoute');
 const { logMiddleware } = require('./middlewares/authMiddlewares');
-const jainAdharRouter = require('./routes/jainAdharRoute');
-const friendshipRoutes = require('./routes/friendshipRoutes');
-const postRoutes = require('./routes/postRoutes'); 
+const jainAdharRouter = require('./routes/UserRegistrationRoutes/jainAdharRoute');
+const friendshipRoutes = require('./routes/SocialMediaRoutes/friendshipRoutes');
+const postRoutes = require('./routes/SocialMediaRoutes/postRoutes');
 const unitRoutes = require('./routes/unitRoute');
 const panchayatRoute = require('./routes/panchayatRoutes');
-const messageRoutes = require('./routes/messageRoutes');
+const messageRoutes = require('./routes/SocialMediaRoutes/messageRoutes');
 const jainVyaparRoutes = require('./routes/jainVyaparRoutes');
 const tirthSanrakshanRoute = require('./routes/TirthSanrakshanRoute');
 const sadhuInfoRoutes = require('./routes/sadhuInfoRoutes');
-const ShanghatanIdPasswordRoute = require('./routes/ShanghatanIdPasswordRoute')
+const ShanghatanIdPasswordRoute = require('./routes/ShanghatanIdPasswordRoute');
 const panchayatIdPasswordRoutes = require('./routes/panchayatIdPasswordRoutes');
-const tirthIdPasswordRoutes = require('./routes/tirthIdPasswordRoutes')
-const jainVyaparRoute = require('./routes/JainVyaparIdPassRoutes')
+const tirthIdPasswordRoutes = require('./routes/tirthIdPasswordRoutes');
+const jainVyaparRoute = require('./routes/JainVyaparIdPassRoutes');
 const sadhuRoutes = require('./routes/sadhuRoutes');
 const biodataRoutes = require('./routes/biodataRoutes');
-const groupChatRoutes = require('./routes/groupChatRoutes');
+const groupChatRoutes = require('./routes/SocialMediaRoutes/groupChatRoutes');
 const rojgarRoutes = require('./routes/rojgarRoute');
-const reportingRoutes = require('./routes/reportingRoutes')
-const suggestionComplaintRoutes = require('./routes/suggestionComplaintRoutes')
+const reportingRoutes = require('./routes/reportingRoutes');
+const suggestionComplaintRoutes = require('./routes/suggestionComplaintRoutes');
 const granthRoutes = require('./routes/jainGranthRoutes');
 const jainItihasRoutes = require('./routes/jainItihasRoutes');
-const storyRoutes = require('./routes/storyRoutes');
-const notificationRoutes = require('./routes/notificationRoutes')
-const Story = require('./model/storyModel')
-const govtYojanaRoutes = require('./routes/govtYojanaRoutes')
+const storyRoutes = require('./routes/SocialMediaRoutes/storyRoutes');
+const notificationRoutes = require('./routes/SocialMediaRoutes/notificationRoutes');
+const Story = require('./model/SocialMediaModels/storyModel');
+const govtYojanaRoutes = require('./routes/govtYojanaRoutes');
+const s3Client = require('./config/s3Config');
+const { initializeWebSocket, getIo } = require('./websocket/socket');
+const { scheduleStoryCleanup } = require('./jobs/storyCleanupJob');
 
 // Connect to database
 dbConnect();
 
 // Middleware
-app.use(cors());
-app.use(cors({ origin: "*" }));
+app.use(cors({
+  origin: "*",  // This allows your React Native app to connect
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  credentials: true
+}));
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({extended:false}));
+app.use(bodyParser.urlencoded({ extended: false }));
 app.use(logMiddleware);
 
 // Routes
-app.use("/api/auth", authRouter);
+app.use("/api/user", authRouter);
 app.use("/api/jain-aadhar", jainAdharRouter);
 app.use("/api/friendship", friendshipRoutes);
 app.use("/api/posts", postRoutes);
@@ -65,7 +70,7 @@ app.use("/api/tirthidpassword", tirthIdPasswordRoutes);
 app.use("/api/jainvyaparidpassword", jainVyaparRoute);
 app.use("/api/sadhu", sadhuRoutes);
 app.use("/api/biodata", biodataRoutes);
-app.use("/api/groupchat", groupChatRoutes);
+app.use("/api/group-chats", groupChatRoutes); // Corrected route
 app.use("/api/rojgar", rojgarRoutes);
 app.use("/api/reporting", reportingRoutes);
 app.use('/api/suggestion-complaint', suggestionComplaintRoutes);
@@ -75,6 +80,15 @@ app.use('/api/stories', storyRoutes);
 app.use('/api/notification', notificationRoutes);
 app.use('/api/yojana', govtYojanaRoutes);
 
+// Health check route
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    environment: process.env.NODE_ENV,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Error handling
 app.use(notFound);
 app.use(errorHandler);
@@ -82,38 +96,14 @@ app.use(errorHandler);
 // Create HTTP server
 const server = http.createServer(app);
 
-// Socket.io setup
-const io = socketIo(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
+// Initialize WebSocket with mobile-friendly config
+const io = initializeWebSocket(server);
+app.set('socketio', io);
 
-// Socket.io connection handling
-io.on('connection', (socket) => {
-  console.log('A user connected');
-  
-  socket.on('disconnect', () => {
-    console.log('User disconnected');
-  });
-});
-
-// Story cleanup job
-async function deleteExpiredStories() {
-  try {
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    await Story.deleteMany({ createdAt: { $lt: twentyFourHoursAgo } });
-    console.log('Expired stories deleted');
-  } catch (error) {
-    console.error('Error deleting expired stories:', error);
-  }
-}
-
-// Run the cleanup job every hour
-setInterval(deleteExpiredStories, 60 * 60 * 1000);
+// Start the job scheduler
+scheduleStoryCleanup();
 
 // Start server
 server.listen(PORT, () => {
-  console.log(`Server is running at PORT ${PORT}`);
+  console.log(`Server is running in ${process.env.NODE_ENV} mode on port ${PORT}`);
 });

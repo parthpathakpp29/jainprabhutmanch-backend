@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { createJainItihas, getAllJainItihas, updateJainItihas, deleteJainItihas, likeJainItihas } = require("../controller/jainItihasController");
-const upload = require("../middlewares/upload");
+const upload = require("../middlewares/uploadMiddleware");
 
 
 router.post("/create", upload.single("image"), createJainItihas);

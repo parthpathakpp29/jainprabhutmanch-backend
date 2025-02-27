@@ -1,5 +1,5 @@
 const express = require("express");
-const upload = require("../middlewares/upload");
+const upload = require("../middlewares/uploadMiddleware");
 const { uploadGranth, getAllGranths } = require("../controller/jainGranthController");
 
 const router = express.Router();

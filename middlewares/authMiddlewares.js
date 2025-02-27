@@ -1,4 +1,4 @@
-const User = require('../model/userModel'); // Adjust the path to match your project structure
+const User = require('../model/UserRegistrationModels/userModel'); 
 const jwt = require("jsonwebtoken");
 const asyncHandler = require("express-async-handler");
 const dotenv = require("dotenv").config();
@@ -10,57 +10,85 @@ const logMiddleware = (req, res, next) => {
 };
 
 // Authenticate middleware function
-const authenticate = (req, res, next) => {
-    const token = req.headers['authorization'];
-  
+const authenticate = async (req, res, next) => {
+  try {
+    // Get token from header
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    // Extract token
+    const token = authHeader.split(' ')[1];
+
     if (!token) {
       return res.status(401).json({ message: 'No token provided' });
     }
-    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-      if (err) {
-        return res.status(403).json({ message: 'Invalid token' });
-      }
-      req.user = decoded;
-      next();
-    });
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
+    
+    // Get user from database
+    const user = await User.findById(decoded._id);
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    // Check if token matches the stored token
+    if (token !== user.token) {
+      return res.status(401).json({ message: 'Token is invalid or user has logged out' });
+    }
+
+    // Add user to request object
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error('Auth Error:', error);
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+    res.status(500).json({ message: 'Server error' });
+  }
 };
 
 // Auth middleware function
 const authMiddleware = asyncHandler(async (req, res, next) => {
-    let token;
-    const secretKey = process.env.JWT_SECRET;
+    try {
+        const token = req.headers.authorization?.split(" ")[1];
 
-    if (req?.headers?.authorization?.startsWith('Bearer')) {
-        token = req.headers.authorization.split(" ")[1];
-        try {
-            if (token) {
-                const decoded = jwt.verify(token, secretKey);
-                const user = await User.findById(decoded?._id).select('-password -__v');
-                if (!user) {
-                    return res.status(401).json({ 
-                        success: false, 
-                        message: "User not found." 
-                    });
-                }
-                req.user = user;
-                next();
-            } else {
-                return res.status(401).json({ 
-                    success: false, 
-                    message: "Invalid token." 
-                });
-            }
-        } catch (error) {
-            return res.status(401).json({ 
-                success: false, 
-                message: "Token expired or invalid.",
-                error: error.message 
+        if (!token) {
+            return res.status(401).json({
+                success: false,
+                message: "No token attached to headers"
             });
         }
-    } else {
-        return res.status(401).json({ 
-            success: false, 
-            message: "No token attached to headers" 
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded._id)
+            .select('-password -__v');
+
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        // Check if token matches stored token
+        if (token !== user.token) {
+            return res.status(401).json({
+                success: false,
+                message: "Session expired or invalid. Please login again."
+            });
+        }
+
+        req.user = user;
+        next();
+    } catch (error) {
+        return res.status(401).json({
+            success: false,
+            message: "Authentication failed",
+            error: error.message
         });
     }
 });
