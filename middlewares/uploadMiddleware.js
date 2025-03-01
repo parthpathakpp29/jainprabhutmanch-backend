@@ -1,7 +1,8 @@
 const multer = require('multer');
 const multerS3 = require('multer-s3');
-const s3Client = require('../config/s3Config');
+const { s3Client } = require('../config/s3Config');
 const path = require('path');
+const sharp = require('sharp');
 
 // File type validation
 const allowedTypes = new Set([
@@ -15,6 +16,17 @@ const allowedTypes = new Set([
 ]);
 
 const fileFilter = (req, file, cb) => {
+  if (file.fieldname === 'groupIcon') {
+    // Stricter validation for group icons
+    if (['image/jpeg', 'image/png'].includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only JPEG and PNG files are allowed for group icons'));
+    }
+    return;
+  }
+  
+  // Other file types...
   if (allowedTypes.has(file.mimetype)) {
     cb(null, true);
   } else {
@@ -89,17 +101,38 @@ const handleMulterError = (err, req, res, next) => {
   next();
 };
 
+// Add this to the multer configuration
+const optimizeImage = async (req, res, next) => {
+  if (!req.file || !['profilePicture', 'chatImage', 'groupIcon', 'image', 'media'].includes(req.file.fieldname)) return next();
+
+  try {
+    const optimized = await sharp(req.file.buffer)
+      .resize(800, 800, { // Standard size for images
+        fit: 'cover',
+        position: 'center'
+      })
+      .jpeg({ quality: 80 }) // Compress and convert to JPEG
+      .toBuffer();
+
+    req.file.buffer = optimized;
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Export specific upload configurations
 module.exports = upload;
 module.exports.handleMulterError = handleMulterError;
-module.exports.chatImageUpload = upload.single('chatImage');
+module.exports.chatImageUpload = [upload.single('chatImage'), optimizeImage];
 module.exports.jainAadharDocs = upload.fields([
   { name: 'panCard', maxCount: 1 },
   { name: 'aadharCard', maxCount: 1 },
   { name: 'userProfile', maxCount: 1 }
 ]);
-module.exports.storyUpload = upload.array('media', 10);
-module.exports.postMediaUpload = upload.fields([
+module.exports.storyUpload = [upload.array('media', 10), optimizeImage];
+module.exports.postMediaUpload = [upload.fields([
   { name: 'image', maxCount: 10 },
   { name: 'video', maxCount: 10 }
-]);
+]), optimizeImage];
+module.exports.optimizeGroupIcon = optimizeImage;

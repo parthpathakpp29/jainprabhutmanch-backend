@@ -55,6 +55,13 @@ const postSchema = new mongoose.Schema(
 postSchema.index({ createdAt: -1 });
 postSchema.index({ community: 1, createdAt: -1 });
 postSchema.index({ 'comments.createdAt': -1 });
+// Add compound indexes for common query patterns
+postSchema.index({ user: 1, createdAt: -1 }); // For user profile posts
+postSchema.index({ isHidden: 1, createdAt: -1 }); // For filtering hidden posts
+postSchema.index({ user: 1, isHidden: 1 }); // For quickly finding a user's visible posts
+
+// Add text index for search functionality
+postSchema.index({ caption: 'text' }); // Enables text search on captions
 
 // Virtuals
 postSchema.virtual('likeCount').get(function () {

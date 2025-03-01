@@ -1,8 +1,9 @@
 const Story = require('../../model/SocialMediaModels/storyModel');
 const User = require('../../model/UserRegistrationModels/userModel');
 const asyncHandler = require('express-async-handler');
-const { S3Client, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
-const s3Client = require('../../config/s3Config');
+const { DeleteObjectsCommand } = require('@aws-sdk/client-s3');
+const { s3Client } = require('../../config/s3Config');
+const { successResponse, errorResponse } = require('../../utils/apiResponse');
 
 // Create Story
 const createStory = asyncHandler(async (req, res) => {
@@ -15,27 +16,18 @@ const createStory = asyncHandler(async (req, res) => {
         
         // Validate story type
         if (!type) {
-            return res.status(400).json({
-                success: false,
-                message: "Story type is required"
-            });
+            return errorResponse(res, "Story type is required", 400);
         }
 
         // Validate media files
         if (mediaFiles.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: "At least one media file is required"
-            });
+            return errorResponse(res, "At least one media file is required", 400);
         }
 
         // Validate story type
         const validTypes = ['image', 'video', 'text'];
         if (!validTypes.includes(type)) {
-            return res.status(400).json({
-                success: false,
-                message: `Invalid story type. Valid types are: ${validTypes.join(', ')}`
-            });
+            return errorResponse(res, `Invalid story type. Valid types are: ${validTypes.join(', ')}`, 400);
         }
 
         const newStory = await Story.create({
@@ -49,42 +41,38 @@ const createStory = asyncHandler(async (req, res) => {
             $push: { story: newStory._id }
         });
 
-        res.status(201).json({
-            success: true,
-            message: "Story created successfully",
-            data: newStory
-        });
+        return successResponse(res, newStory, "Story created successfully", 201);
     } catch (error) {
         console.error("Error creating story:", error);
-        res.status(500).json({
-            success: false,
-            message: "Error creating story",
-            error: error.message
-        });
+        return errorResponse(res, "Error creating story", 500, error.message);
     }
 });
 
-
+// Get All Stories
 const getAllStories = asyncHandler(async (req, res) => {
-    const { page = 1, limit = 10 } = req.query;
-    const skip = (page - 1) * limit;
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    try {
+        const { page = 1, limit = 10 } = req.query;
+        const skip = (page - 1) * limit;
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   
-    const stories = await Story.find({ createdAt: { $gte: twentyFourHoursAgo } })
-      .populate('userId', 'profilePicture firstName lastName')
-      .skip(skip)
-      .limit(parseInt(limit));
+        const stories = await Story.find({ createdAt: { $gte: twentyFourHoursAgo } })
+          .populate('userId', 'profilePicture firstName lastName')
+          .skip(skip)
+          .limit(parseInt(limit));
   
-    const total = await Story.countDocuments({ createdAt: { $gte: twentyFourHoursAgo } });
+        const total = await Story.countDocuments({ createdAt: { $gte: twentyFourHoursAgo } });
   
-    res.status(200).json({
-      success: true,
-      count: stories.length,
-      currentPage: parseInt(page),
-      totalPages: Math.ceil(total / limit),
-      data: stories,
-    });
-  });
+        return successResponse(res, {
+            count: stories.length,
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(total / limit),
+            data: stories,
+        }, "Stories fetched successfully", 200);
+    } catch (error) {
+        console.error("Error fetching stories:", error);
+        return errorResponse(res, "Error fetching stories", 500, error.message);
+    }
+});
 
 // Get Stories by User
 const getStoriesByUser = asyncHandler(async (req, res) => {
@@ -98,74 +86,67 @@ const getStoriesByUser = asyncHandler(async (req, res) => {
         }).populate("userId", "profilePicture firstName lastName");
 
         if (!stories.length) {
-            return res.status(404).json({
-                success: false,
-                message: 'No active stories found for this user'
-            });
+            return errorResponse(res, 'No active stories found for this user', 404);
         }
 
-        res.json({
-            success: true,
-            count: stories.length,
-            data: stories
-        });
+        return successResponse(res, stories, "Stories fetched successfully", 200);
     } catch (error) {
         console.error('Error fetching user stories:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error fetching user stories',
-            error: error.message
-        });
+        return errorResponse(res, 'Error fetching user stories', 500, error.message);
     }
 });
+
 // Delete Story
 const deleteStory = asyncHandler(async (req, res) => {
     try {
         const { storyId } = req.params;
         const userId = req.user._id; // Get userId from authenticated user
-        
-        // Verify story ownership
+
+        // Find the story
         const story = await Story.findOne({
             _id: storyId,
-            userId: userId // Ensure the authenticated user owns the story
+            userId: userId 
         });
 
         if (!story) {
-            return res.status(404).json({
-                success: false,
-                message: "Story not found or unauthorized"
-            });
+            return errorResponse(res, "Story not found or you don't have permission to delete it", 404);
         }
 
-        // Delete the story
+        // Remove story from user's stories array
+        await User.findByIdAndUpdate(userId, {
+            $pull: { story: storyId } 
+        });
+
+        // Delete the story document
         await Story.findByIdAndDelete(storyId);
 
-        // Remove story reference from User
-        await User.findByIdAndUpdate(userId, {
-            $pull: { story: storyId }
-        });
-
         // Delete media from S3
-        const deleteParams = {
-            Bucket: process.env.AWS_BUCKET_NAME,
-            Delete: {
-                Objects: story.media.map(mediaUrl => ({ Key: mediaUrl.split('.com/')[1] }))
+        if (story.media && story.media.length > 0) {
+            try {
+                const deleteParams = {
+                    Bucket: process.env.AWS_BUCKET_NAME,
+                    Delete: {
+                        Objects: story.media.map(mediaUrl => {
+                            // Extract the key from the S3 URL
+                            const key = mediaUrl.split('.com/')[1];
+                            return { Key: key };
+                        })
+                    }
+                };
+                
+                const deleteCommand = new DeleteObjectsCommand(deleteParams);
+                await s3Client.send(deleteCommand);
+                console.log('Successfully deleted media from S3');
+            } catch (s3Error) {
+                console.error('Error deleting media from S3:', s3Error);
+                // Continue with the response even if S3 deletion fails
             }
-        };
-        const deleteCommand = new DeleteObjectsCommand(deleteParams);
-        await s3Client.send(deleteCommand);
+        }
 
-        res.json({
-            success: true,
-            message: "Story deleted successfully"
-        });
+        return successResponse(res, {}, "Story and associated media deleted successfully", 200);
     } catch (error) {
         console.error("Error deleting story:", error);
-        res.status(500).json({
-            success: false,
-            message: "Error deleting story",
-            error: error.message
-        });
+        return errorResponse(res, "Error deleting story", 500, error.message);
     }
 });
 

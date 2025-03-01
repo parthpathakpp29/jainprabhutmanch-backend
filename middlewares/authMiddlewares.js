@@ -12,41 +12,40 @@ const logMiddleware = (req, res, next) => {
 // Authenticate middleware function
 const authenticate = async (req, res, next) => {
   try {
-    // Get token from header
     const authHeader = req.headers.authorization;
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ message: 'No token provided' });
     }
 
-    // Extract token
     const token = authHeader.split(' ')[1];
 
     if (!token) {
       return res.status(401).json({ message: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
-    
-    // Get user from database
-    const user = await User.findById(decoded._id);
-    if (!user) {
-      return res.status(401).json({ message: 'User not found' });
-    }
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const user = await User.findById(decoded._id);
 
-    // Check if token matches the stored token
-    if (token !== user.token) {
-      return res.status(401).json({ message: 'Token is invalid or user has logged out' });
-    }
+      if (!user) {
+        return res.status(401).json({ message: 'User not found' });
+      }
 
-    // Add user to request object
-    req.user = user;
-    next();
+      if (token !== user.token) {
+        return res.status(401).json({ message: 'Invalid token' });
+      }
+
+      req.user = user;
+      next();
+    } catch (error) {
+      if (error.name === 'TokenExpiredError') {
+        return res.status(401).json({ message: 'Token expired' });
+      }
+      throw error;
+    }
   } catch (error) {
     console.error('Auth Error:', error);
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ message: 'Invalid token' });
-    }
     res.status(500).json({ message: 'Server error' });
   }
 };

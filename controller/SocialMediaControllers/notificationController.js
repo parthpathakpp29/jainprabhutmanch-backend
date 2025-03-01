@@ -1,5 +1,6 @@
 const Notification = require('../../model/SocialMediaModels/notificationModel');
 const { getIo } = require('../../websocket/socket');
+const { successResponse, errorResponse } = require('../../utils/apiResponse');
 
 // Send Notification
 exports.sendNotification = async (req, res) => {
@@ -8,7 +9,7 @@ exports.sendNotification = async (req, res) => {
 
     // Validate input
     if (!senderId || !receiverId || !type || !message) {
-      return res.status(400).json({ success: false, message: 'Missing required fields' });
+      return errorResponse(res, 'Missing required fields', 400);
     }
 
     const notification = new Notification({
@@ -23,10 +24,10 @@ exports.sendNotification = async (req, res) => {
     const io = getIo();
     io.to(receiverId.toString()).emit('newNotification', notification);
 
-    res.status(201).json({ success: true, message: 'Notification sent successfully', notification });
+    return successResponse(res, notification, 'Notification sent successfully');
   } catch (error) {
     console.error('Error sending notification:', error);
-    res.status(500).json({ success: false, message: 'Failed to send notification' });
+    return errorResponse(res, 'Failed to send notification', 500);
   }
 };
 
@@ -35,10 +36,10 @@ exports.getNotifications = async (req, res) => {
   try {
     const { userId } = req.params;
     const notifications = await Notification.find({ receiverId: userId }).sort({ createdAt: -1 });
-    res.status(200).json({ success: true, notifications });
+    return successResponse(res, notifications, 'Notifications retrieved successfully');
   } catch (error) {
     console.error('Error fetching notifications:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch notifications' });
+    return errorResponse(res, 'Failed to fetch notifications', 500);
   }
 };
 
@@ -53,16 +54,16 @@ exports.markAsRead = async (req, res) => {
     );
 
     if (!notification) {
-      return res.status(404).json({ success: false, message: 'Notification not found' });
+      return errorResponse(res, 'Notification not found', 404);
     }
 
     // Emit a WebSocket event to the receiver
     const io = getIo();
     io.to(notification.receiverId.toString()).emit('notificationRead', notification);
 
-    res.status(200).json({ success: true, message: 'Notification marked as read', notification });
+    return successResponse(res, notification, 'Notification marked as read');
   } catch (error) {
     console.error('Error marking notification as read:', error);
-    res.status(500).json({ success: false, message: 'Failed to mark notification as read' });
+    return errorResponse(res, 'Failed to mark notification as read', 500);
   }
 };

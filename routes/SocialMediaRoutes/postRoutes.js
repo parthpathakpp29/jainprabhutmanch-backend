@@ -9,20 +9,101 @@ const {
   getPostById,
   addComment,
   addReply,
-  getReplies
+  getReplies,
+  hidePost,
+  unhidePost,
+  deleteMediaItem
 } = require('../../controller/SocialMediaControllers/postController');
+const { authMiddleware } = require('../../middlewares/authMiddlewares');
+const { check, param } = require('express-validator');
+const rateLimit = require('express-rate-limit');
+const upload = require('../../middlewares/uploadMiddleware');
 
 const router = express.Router();
 
-router.post('/create', createPost); // Create a post
-router.get('/', getAllPosts); // Get all posts
-router.put('/:postId/like', toggleLike); // Like a post
-router.delete('/:postId', deletePost); // Delete a post
-router.put('/:postId', editPost); // Edit a post
-router.get('/user/:userId', getPostsByUser); // Get posts by user
-router.get('/:postId', getPostById); // Get post by ID
-router.post('/comment', addComment); // Add comment to post
-router.post('/comment/reply', addReply); // Add reply to comment
-router.get('/comments/:commentId/replies', getReplies); // Get replies for a comment
+// Apply authentication middleware to all routes
+router.use(authMiddleware);
+
+// Rate limiting for post creation
+const postCreationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit each user to 5 posts per 15 minutes
+  message: {
+    success: false,
+    message: 'Too many posts created. Please try again later.'
+  },
+  standardHeaders: true,
+  keyGenerator: (req) => req.user ? req.user.id : req.ip // Use user ID if available
+});
+
+// Post CRUD operations
+router.post('/create', 
+  postCreationLimiter, 
+  upload.postMediaUpload,  
+  [
+    check('caption').optional().isLength({ max: 2000 }).withMessage('Caption cannot exceed 2000 characters'),
+    check('userId').notEmpty().withMessage('User ID is required')
+  ], 
+  createPost
+);
+
+router.get('/', getAllPosts);
+
+router.get('/:postId', [
+  param('postId').isMongoId().withMessage('Invalid post ID')
+], getPostById);
+
+router.put('/:postId', [
+  param('postId').isMongoId().withMessage('Invalid post ID'),
+  check('caption').optional().isLength({ max: 2000 }).withMessage('Caption cannot exceed 2000 characters')
+], editPost);
+
+router.delete('/:postId', [
+  param('postId').isMongoId().withMessage('Invalid post ID')
+], deletePost);
+
+// Delete a specific media item from a post
+router.delete('/:postId/media/:mediaId', [
+  param('postId').isMongoId().withMessage('Invalid post ID'),
+  param('mediaId').isMongoId().withMessage('Invalid media ID'),
+  check('userId').notEmpty().isMongoId().withMessage('User ID is required')
+], deleteMediaItem);
+
+// User-specific post routes
+router.get('/user/:userId', [
+  param('userId').isMongoId().withMessage('Invalid user ID')
+], getPostsByUser);
+
+// Interaction routes
+router.put('/:postId/like', [
+  param('postId').isMongoId().withMessage('Invalid post ID')
+], toggleLike);
+
+router.post('/comment', [
+  check('postId').isMongoId().withMessage('Invalid post ID'),
+  check('commentText').notEmpty().withMessage('Comment text is required').isLength({ max: 500 }).withMessage('Comment cannot exceed 500 characters'),
+  check('userId').notEmpty().isMongoId().withMessage('User ID is required')
+], addComment);
+
+router.post('/comment/reply', [
+  check('commentId').isMongoId().withMessage('Invalid comment ID'),
+  check('replyText').notEmpty().withMessage('Reply text is required').isLength({ max: 500 }).withMessage('Reply cannot exceed 500 characters'),
+  check('userId').notEmpty().isMongoId().withMessage('User ID is required')
+], addReply);
+
+router.get('/comments/:commentId/replies', [
+  param('commentId').isMongoId().withMessage('Invalid comment ID')
+], getReplies);
+
+// Visibility routes
+router.put('/:postId/hide', [
+  param('postId').isMongoId().withMessage('Invalid post ID'),
+  check('userId').notEmpty().isMongoId().withMessage('User ID is required')
+], hidePost);
+
+router.put('/:postId/unhide', [
+  param('postId').isMongoId().withMessage('Invalid post ID'),
+  check('userId').notEmpty().isMongoId().withMessage('User ID is required')
+], unhidePost);
 
 module.exports = router;

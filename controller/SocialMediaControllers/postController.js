@@ -6,21 +6,24 @@ const upload = require('../../middlewares/uploadMiddleware');
 const { postValidation } = require('../../validators/validations');
 const Notification = require('../../model/SocialMediaModels/notificationModel');
 const { getIo } = require('../../websocket/socket');
+const { successResponse, errorResponse } = require('../../utils/apiResponse');
+const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
+const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
 
 // Create a post
 const createPost = [
-  upload.postMediaUpload,
+  // Removing upload.postMediaUpload as it's already in the route
   ...postValidation.create,
   asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return errorResponse(res, 'Validation failed', 400, errors.array());
     }
 
     const { caption, userId } = req.body;
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return errorResponse(res, 'User not found', 404);
     }
 
     const media = [];
@@ -46,7 +49,7 @@ const createPost = [
     const post = await Post.create({ user: userId, caption, media });
     user.posts.push(post._id);
     await user.save();
-    res.status(201).json(post);
+    return successResponse(res, post, 'Post created successfully', 201);
   })
 ];
 
@@ -56,7 +59,7 @@ const getPostsByUser = [
   asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return errorResponse(res, 'Validation failed', 400, errors.array());
     }
 
     const { userId } = req.params;
@@ -65,10 +68,10 @@ const getPostsByUser = [
       .sort({ createdAt: -1 });
 
     if (!posts || posts.length === 0) {
-      return res.status(404).json({ error: 'No posts found for this user' });
+      return errorResponse(res, 'No posts found for this user', 404);
     }
 
-    res.json(posts);
+    return successResponse(res, posts, 'Posts fetched successfully');
   })
 ];
 
@@ -78,7 +81,7 @@ const getPostById = [
   asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return errorResponse(res, 'Validation failed', 400, errors.array());
     }
 
     const { postId } = req.params;
@@ -94,20 +97,20 @@ const getPostById = [
       });
 
     if (!post) {
-      return res.status(404).json({ error: 'Post not found' });
+      return errorResponse(res, 'Post not found', 404);
     }
 
-    res.json(post);
+    return successResponse(res, post, 'Post fetched successfully');
   })
 ];
 
 // Get all posts
 const getAllPosts = asyncHandler(async (req, res) => {
-  const posts = await Post.find({})
+  const posts = await Post.find({ isHidden: false })
     .populate('user', 'firstName lastName profilePicture')
     .sort({ createdAt: -1 });
 
-  res.json(posts);
+  return successResponse(res, posts, 'Posts fetched successfully');
 });
 
 // Toggle like on a post
@@ -116,7 +119,7 @@ const toggleLike = [
   asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return errorResponse(res, 'Validation failed', 400, errors.array());
     }
 
     const { postId } = req.params;
@@ -124,7 +127,7 @@ const toggleLike = [
 
     const post = await Post.findById(postId);
     if (!post) {
-      return res.status(404).json({ message: 'Post not found' });
+      return errorResponse(res, 'Post not found', 404);
     }
 
     const isLiked = post.likes.includes(userId);
@@ -136,7 +139,7 @@ const toggleLike = [
       // Send a like notification
       const notification = new Notification({
         senderId: userId,
-        receiverId: post.user, // Fixed: use post.user instead of receiverId
+        receiverId: post.user, 
         type: 'like',
         message: 'Someone liked your post.'
       });
@@ -148,15 +151,9 @@ const toggleLike = [
     }
 
     await post.save();
-    res.status(200).json({
-      message: isLiked ? 'Like removed' : 'Post liked',
-      likesCount: post.likes.length,
-      likes: post.likes,
-    });
+    return successResponse(res, { likesCount: post.likes.length, likes: post.likes }, isLiked ? 'Like removed' : 'Post liked', 200);
   })
 ];
-
-
 
 // Delete a post
 const deletePost = [
@@ -164,7 +161,7 @@ const deletePost = [
   asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return errorResponse(res, 'Validation failed', 400, errors.array());
     }
 
     const { postId } = req.params;
@@ -172,23 +169,47 @@ const deletePost = [
 
     const post = await Post.findById(postId);
     if (!post) {
-      return res.status(404).json({ error: 'Post not found' });
+      return errorResponse(res, 'Post not found', 404);
     }
 
     if (post.user.toString() !== userId.toString()) {
-      return res.status(403).json({ error: 'Unauthorized to delete this post' });
+      return errorResponse(res, 'Unauthorized to delete this post', 403);
     }
 
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return errorResponse(res, 'User not found', 404);
+    }
+
+    // Delete media files from S3 bucket
+    if (post.media && post.media.length > 0) {
+      const deletePromises = post.media.map(async (mediaItem) => {
+        try {
+          const key = extractS3KeyFromUrl(mediaItem.url);
+          if (key) {
+            const deleteParams = {
+              Bucket: process.env.AWS_BUCKET_NAME,
+              Key: key
+            };
+            
+            await s3Client.send(new DeleteObjectCommand(deleteParams));
+            console.log(`Successfully deleted file from S3: ${key}`);
+          }
+        } catch (error) {
+          console.error(`Error deleting file from S3: ${mediaItem.url}`, error);
+          // Continue with post deletion even if S3 deletion fails
+        }
+      });
+      
+      // Wait for all S3 delete operations to complete
+      await Promise.all(deletePromises);
     }
 
     user.posts = user.posts.filter((id) => id.toString() !== postId.toString());
     await user.save();
     await post.deleteOne();
 
-    res.json({ message: 'Post deleted successfully' });
+    return successResponse(res, {}, 'Post deleted successfully');
   })
 ];
 
@@ -199,7 +220,7 @@ const editPost = [
   asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return errorResponse(res, 'Validation failed', 400, errors.array());
     }
 
     const { userId, caption } = req.body;
@@ -207,14 +228,42 @@ const editPost = [
 
     const post = await Post.findById(postId);
     if (!post) {
-      return res.status(404).json({ error: 'Post not found' });
+      return errorResponse(res, 'Post not found', 404);
     }
 
     if (post.user.toString() !== userId.toString()) {
-      return res.status(403).json({ error: 'Unauthorized' });
+      return errorResponse(res, 'Unauthorized', 403);
     }
 
     post.caption = caption;
+    
+    // If replaceMedia flag is set, delete existing media from S3 and replace with new ones
+    if (req.body.replaceMedia === 'true' && post.media && post.media.length > 0) {
+      // Delete existing media from S3
+      const deletePromises = post.media.map(async (mediaItem) => {
+        try {
+          const key = extractS3KeyFromUrl(mediaItem.url);
+          if (key) {
+            const deleteParams = {
+              Bucket: process.env.AWS_BUCKET_NAME,
+              Key: key
+            };
+            
+            await s3Client.send(new DeleteObjectCommand(deleteParams));
+            console.log(`Successfully deleted file from S3: ${key}`);
+          }
+        } catch (error) {
+          console.error(`Error deleting file from S3: ${mediaItem.url}`, error);
+        }
+      });
+      
+      // Wait for all S3 delete operations to complete
+      await Promise.all(deletePromises);
+      
+      // Clear existing media array
+      post.media = [];
+    }
+    
     if (req.files) {
       if (req.files.image) {
         req.files.image.forEach(file => {
@@ -235,7 +284,7 @@ const editPost = [
     }
     await post.save();
 
-    res.status(200).json({ message: 'Post updated successfully', post });
+    return successResponse(res, post, 'Post updated successfully', 200);
   })
 ];
 
@@ -245,13 +294,13 @@ const addComment = [
   asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return errorResponse(res, 'Validation failed', 400, errors.array());
     }
 
     const { postId, commentText, userId } = req.body;
     const post = await Post.findById(postId);
     if (!post) {
-      return res.status(404).json({ message: 'Post not found' });
+      return errorResponse(res, 'Post not found', 404);
     }
 
     const comment = {
@@ -276,7 +325,7 @@ const addComment = [
     const io = getIo();
     io.to(post.user.toString()).emit('newNotification', notification);
 
-    res.status(200).json({ message: 'Comment added successfully', post });
+    return successResponse(res, post, 'Comment added successfully', 200);
   })
 ];
 
@@ -286,18 +335,18 @@ const addReply = [
   asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return errorResponse(res, 'Validation failed', 400, errors.array());
     }
 
     const { commentId, userId, replyText } = req.body;
     const post = await Post.findOne({ 'comments._id': commentId });
     if (!post) {
-      return res.status(404).json({ message: 'Post or comment not found' });
+      return errorResponse(res, 'Post or comment not found', 404);
     }
 
     const comment = post.comments.id(commentId);
     if (!comment) {
-      return res.status(404).json({ message: 'Comment not found' });
+      return errorResponse(res, 'Comment not found', 404);
     }
 
     const newReply = {
@@ -324,7 +373,7 @@ const addReply = [
     io.to(comment.user.toString()).emit('newNotification', notification);
     
 
-    res.status(201).json({ message: 'Reply added successfully', reply: newReply });
+    return successResponse(res, newReply, 'Reply added successfully', 201);
   })
 ];
 
@@ -334,24 +383,108 @@ const getReplies = [
   asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return errorResponse(res, 'Validation failed', 400, errors.array());
     }
 
     const { commentId } = req.params;
     const post = await Post.findOne({ 'comments._id': commentId });
     if (!post) {
-      return res.status(404).json({ message: 'Post or comment not found' });
+      return errorResponse(res, 'Post or comment not found', 404);
     }
 
     const comment = post.comments.id(commentId);
     if (!comment) {
-      return res.status(404).json({ message: 'Comment not found' });
+      return errorResponse(res, 'Comment not found', 404);
     }
 
     await post.populate('comments.replies.user', 'firstName lastName profilePicture');
-    res.status(200).json({ message: 'Replies fetched successfully', replies: comment.replies });
+    return successResponse(res, comment.replies, 'Replies fetched successfully', 200);
   })
 ];
+
+// Delete a specific media item from a post
+const deleteMediaItem = asyncHandler(async (req, res) => {
+  const { postId, mediaId } = req.params;
+  const { userId } = req.body;
+
+  const post = await Post.findById(postId);
+  if (!post) {
+    return errorResponse(res, 'Post not found', 404);
+  }
+
+  if (post.user.toString() !== userId) {
+    return errorResponse(res, 'Unauthorized to modify this post', 403);
+  }
+
+  // Find the media item in the post
+  const mediaItem = post.media.id(mediaId);
+  if (!mediaItem) {
+    return errorResponse(res, 'Media item not found', 404);
+  }
+
+  // Delete from S3
+  try {
+    const key = extractS3KeyFromUrl(mediaItem.url);
+    if (key) {
+      const deleteParams = {
+        Bucket: process.env.AWS_BUCKET_NAME,
+        Key: key
+      };
+      
+      await s3Client.send(new DeleteObjectCommand(deleteParams));
+      console.log(`Successfully deleted file from S3: ${key}`);
+    }
+  } catch (error) {
+    console.error(`Error deleting file from S3: ${mediaItem.url}`, error);
+    return errorResponse(res, 'Error deleting media from storage', 500);
+  }
+
+  // Remove the media item from the post
+  post.media.pull(mediaId);
+  await post.save();
+
+  return successResponse(res, post, 'Media item deleted successfully');
+});
+
+// Hide a post (make it invisible to others)
+const hidePost = asyncHandler(async (req, res) => {
+  const { postId } = req.params;
+  const { userId } = req.body;
+
+  const post = await Post.findById(postId);
+  if (!post) {
+    return errorResponse(res, 'Post not found', 404);
+  }
+
+  if (post.user.toString() !== userId) {
+    return errorResponse(res, 'Unauthorized to modify this post', 403);
+  }
+
+  post.isHidden = true;
+  await post.save();
+
+  return successResponse(res, post, 'Post hidden successfully');
+});
+
+// Unhide a post (make it visible again)
+const unhidePost = asyncHandler(async (req, res) => {
+  const { postId } = req.params;
+  const { userId } = req.body;
+
+  const post = await Post.findById(postId);
+  if (!post) {
+    return errorResponse(res, 'Post not found', 404);
+  }
+
+  if (post.user.toString() !== userId) {
+    return errorResponse(res, 'Unauthorized to modify this post', 403);
+  }
+
+  post.isHidden = false;
+  await post.save();
+
+  return successResponse(res, post, 'Post unhidden successfully');
+});
 
 module.exports = {
   createPost,
@@ -363,5 +496,8 @@ module.exports = {
   getPostById,
   addComment,
   addReply,
-  getReplies
+  getReplies,
+  hidePost,
+  unhidePost,
+  deleteMediaItem
 };

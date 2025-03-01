@@ -8,7 +8,12 @@ const {
   sendGroupMessage,
   getGroupMessages,
   deleteGroupMessage,
-  updateGroupDetails
+  updateGroupDetails,
+  leaveGroup,
+  updateGroupIcon,
+  checkMembership,
+  addMembers,
+  updateGroupName
 } = require('../../controller/SocialMediaControllers/groupChatController');
 const { authenticate } = require('../../middlewares/authMiddlewares');
 const upload = require('../../middlewares/uploadMiddleware');
@@ -39,5 +44,20 @@ router.delete('/messages/:groupId/:messageId', deleteGroupMessage);
 
 // Update group details (name, image, members)
 router.put('/update/:groupId', upload.single('groupImage'), updateGroupDetails);
+
+// Leave group
+router.post('/leave/:groupId', leaveGroup);
+
+// Update group icon
+router.post('/icon/:groupId', upload.single('groupIcon'), updateGroupIcon);
+
+// Check group membership
+router.get('/check-membership/:groupId', checkMembership);
+
+// Add members to group
+router.post('/add-members/:groupId', addMembers);
+
+// Update group name
+router.put('/update-name/:groupId', updateGroupName);
 
 module.exports = router;

@@ -6,35 +6,95 @@ const {
     updateUserById, 
     loginUser, 
     logoutUser,
-    updatePrivacy,
     uploadProfilePicture,
     skipProfilePicture
 } = require('../../controller/UserRegistrationControllers/userController');
-const { authMiddleware } = require('../../middlewares/authMiddlewares');
+const { authMiddleware, checkAccess } = require('../../middlewares/authMiddlewares');
 const upload = require('../../middlewares/uploadMiddleware');
+const { check, param, body } = require('express-validator');
+const rateLimit = require('express-rate-limit');
 
 const router = express.Router();
 
-// Auth routes
-router.post('/register', registerUser);
-router.post('/login', loginUser);
+// Rate limiters
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // 5 login attempts per 15 minutes
+    message: {
+        success: false,
+        message: 'Too many login attempts. Please try again later.'
+    }
+});
+
+const registerLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 3, // 3 registration attempts per hour
+    message: {
+        success: false,
+        message: 'Too many registration attempts. Please try again later.'
+    }
+});
+
+// Public routes
+router.post('/register', 
+    registerLimiter,
+    [
+        body('firstName').trim().isLength({ min: 2, max: 30 }).withMessage('First name must be between 2 and 30 characters'),
+        body('lastName').trim().isLength({ min: 2, max: 30 }).withMessage('Last name must be between 2 and 30 characters'),
+        body('phoneNumber').matches(/\d{10}/).withMessage('Phone number must be 10 digits'),
+        body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+        body('birthDate').isISO8601().withMessage('Invalid birth date format'),
+        body('gender').isIn(['Male', 'Female', 'Other']).withMessage('Gender must be Male, Female, or Other'),
+        body('city').notEmpty().withMessage('City is required')
+    ],
+    registerUser
+);
+
+router.post('/login', 
+    loginLimiter,
+    [
+        body('phoneNumber').matches(/\d{10}/).withMessage('Phone number must be 10 digits'),
+        body('password').notEmpty().withMessage('Password is required')
+    ],
+    loginUser
+);
+
+// Protected routes
+router.use(authMiddleware);
+
+router.post('/logout', logoutUser);
+
+// Routes that require additional access check
+router.use(checkAccess);
+
 router.get('/users', getAllUsers);
-router.get('/:id', getUserById);
-router.put('/:id', updateUserById);
-router.put('/update-privacy/:id', updatePrivacy);
-// Add this to your existing routes
-router.post('/logout', authMiddleware, logoutUser);
+
+router.get('/:id', 
+    [
+        param('id').isMongoId().withMessage('Invalid user ID')
+    ],
+    getUserById
+);
+
+router.put('/:id', 
+    [
+        param('id').isMongoId().withMessage('Invalid user ID'),
+        body('firstName').optional().trim().isLength({ min: 2, max: 30 }).withMessage('First name must be between 2 and 30 characters'),
+        body('lastName').optional().trim().isLength({ min: 2, max: 30 }).withMessage('Last name must be between 2 and 30 characters'),
+        body('city').optional().notEmpty().withMessage('City cannot be empty'),
+        body('bio').optional().isLength({ max: 200 }).withMessage('Bio cannot exceed 200 characters')
+    ],
+    updateUserById
+);
 
 router.post(
     '/upload-profile-picture',
-    authMiddleware,
     upload.single('profilePicture'),
     uploadProfilePicture
 );
 
 router.post(
     '/skip-profile-picture',
-    authMiddleware,
     skipProfilePicture
 );
 

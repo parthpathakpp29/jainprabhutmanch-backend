@@ -5,6 +5,8 @@ const { validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');
 const dotenv = require("dotenv").config();
 const { userValidation } = require('../../validators/validations');
+const { generateToken } = require('../../helpers/authHelpers');
+const { successResponse, errorResponse } = require('../../utils/apiResponse');
 
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, 
@@ -12,29 +14,18 @@ const authLimiter = rateLimit({
     message: { success: false, error: 'Too many login attempts. Please try again later.' }
 });
 
-// Generate JWT Token
-const generateToken = (user) => {
-    return jwt.sign(
-        {
-            _id: user._id,
-            firstName: user.firstName,
-            lastName: user.lastName
-        },
-        process.env.JWT_SECRET,
-        { algorithm: 'HS256' }
-    );
-};
-
 // Register new user with enhanced security
 const registerUser = [
     userValidation.register,
     asyncHandler(async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ 
-                success: false,
-                errors: errors.array().map(err => ({ field: err.param, message: err.msg }))
-            });
+            return errorResponse(
+                res, 
+                'Validation failed', 
+                400, 
+                errors.array().map(err => ({ field: err.param, message: err.msg }))
+            );
         }
 
         const { firstName, lastName, phoneNumber, password, birthDate, gender, city } = req.body;
@@ -42,10 +33,7 @@ const registerUser = [
         // Check if user already exists
         const existingUser = await User.findOne({ phoneNumber });
         if (existingUser) {
-            return res.status(400).json({ 
-                success: false,
-                error: 'User with this phone number already exists'
-            });
+            return errorResponse(res, 'User with this phone number already exists', 400);
         }
 
         // Enhanced name formatting
@@ -75,13 +63,16 @@ const registerUser = [
         delete userResponse.password;
         delete userResponse.__v;
 
-        res.status(201).json({
-            success: true,
-            message: 'User registered successfully',
-            user: userResponse,
-            token,
-            nextStep: 'profile_picture' 
-        });
+        return successResponse(
+            res, 
+            {
+                user: userResponse,
+                token,
+                nextStep: 'profile_picture' 
+            },
+            'User registered successfully',
+            201
+        );
     })
 ];
 
@@ -98,10 +89,7 @@ const loginUser = [
             const lastName = lastNameParts.join(' ');
 
             if (!firstName || !lastName) {
-                return res.status(400).json({
-                    success: false,
-                    message: "Please enter your full name"
-                });
+                return errorResponse(res, "Please enter your full name", 400);
             }
 
             // Find user by firstName and lastName
@@ -111,35 +99,29 @@ const loginUser = [
             });
             
             if (!user || !(await user.isPasswordMatched(password))) {
-                return res.status(401).json({
-                    success: false,
-                    message: "Invalid full name or password"
-                });
+                return errorResponse(res, "Invalid full name or password", 401);
             }
 
+            // Generate tokens
             const token = generateToken(user);
             user.token = token;
-            user.lastLogin = new Date();
             await user.save();
 
             const userResponse = user.toObject();
             delete userResponse.password;
             delete userResponse.__v;
 
-            res.json({
-                success: true,
-                message: "Login successful",
-                data: {
+            return successResponse(
+                res, 
+                {
                     user: userResponse,
-                    token
-                }
-            });
+                    token: token
+                },
+                "Login successful",
+                200
+            );
         } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: "Login failed",
-                error: error.message
-            });
+            return errorResponse(res, "Login failed", 500, error.message);
         }
     })
 ];
@@ -171,13 +153,17 @@ const getAllUsers = asyncHandler(async (req, res) => {
 
     const total = await User.countDocuments(query);
 
-    res.json({
-        success: true,
-        users,
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(total / limit),
-        totalUsers: total
-    });
+    return successResponse(
+        res, 
+        {
+            users,
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(total / limit),
+            totalUsers: total
+        },
+        'Users retrieved successfully',
+        200
+    );
 });
 
 // Enhanced user profile retrieval
@@ -194,19 +180,20 @@ const getUserById = asyncHandler(async (req, res) => {
         .populate('story', 'content createdAt');
 
     if (!user) {
-        return res.status(404).json({ 
-            success: false,
-            error: 'User not found'
-        });
+        return errorResponse(res, 'User not found', 404);
     }
 
     const userResponse = user.toObject();
     userResponse.postCount = user.posts.length;
 
-    res.json({
-        success: true,
-        user: userResponse
-    });
+    return successResponse(
+        res, 
+        {
+            user: userResponse
+        },
+        'User retrieved successfully',
+        200
+    );
 });
 
 // Enhanced user update with validation
@@ -220,18 +207,12 @@ const updateUserById = asyncHandler(async (req, res) => {
 
     const user = await User.findById(id);
     if (!user) {
-        return res.status(404).json({ 
-            success: false,
-            error: 'User not found'
-        });
+        return errorResponse(res, 'User not found', 404);
     }
 
     // Validate updates
     if (updates.phoneNumber && !/^\d{10}$/.test(updates.phoneNumber)) {
-        return res.status(400).json({ 
-            success: false,
-            error: 'Invalid phone number format'
-        });
+        return errorResponse(res, 'Invalid phone number format', 400);
     }
 
     const updatedUser = await User.findByIdAndUpdate(
@@ -240,34 +221,14 @@ const updateUserById = asyncHandler(async (req, res) => {
         { new: true, runValidators: true }
     ).select('-password -__v');
 
-    res.json({
-        success: true,
-        user: updatedUser
-    });
-});
-
-// Enhanced privacy settings
-const updatePrivacy = asyncHandler(async (req, res) => {
-    const { id } = req.params;
-
-    const user = await User.findByIdAndUpdate(
-        id,
-        { privacy: 'public' },
-        { new: true }
-    ).select('-password -__v');
-
-    if (!user) {
-        return res.status(404).json({ 
-            success: false,
-            error: 'User not found'
-        });
-    }
-
-    res.json({
-        success: true,
-        message: 'Privacy settings updated successfully',
-        user
-    });
+    return successResponse(
+        res, 
+        {
+            user: updatedUser
+        },
+        'User updated successfully',
+        200
+    );
 });
 
 // Upload profile picture with registration step tracking
@@ -292,26 +253,20 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
         ).select('-password -__v');
 
         if (!user) {
-            return res.status(404).json({
-                success: false,
-                error: 'User not found'
-            });
+            return errorResponse(res, 'User not found', 404);
         }
 
-        res.status(200).json({
-            success: true,
-            message: imageUrl ? 'Profile picture uploaded successfully' : 'Profile picture upload skipped',
-            data: {
+        return successResponse(
+            res, 
+            {
                 user,
                 registrationComplete: true
-            }
-        });
+            },
+            imageUrl ? 'Profile picture uploaded successfully' : 'Profile picture upload skipped',
+            200
+        );
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Error processing profile picture',
-            details: error.message
-        });
+        return errorResponse(res, 'Error processing profile picture', 500, error.message);
     }
 });
 
@@ -327,26 +282,20 @@ const skipProfilePicture = asyncHandler(async (req, res) => {
         ).select('-password -__v');
 
         if (!user) {
-            return res.status(404).json({
-                success: false,
-                error: 'User not found'
-            });
+            return errorResponse(res, 'User not found', 404);
         }
 
-        res.status(200).json({
-            success: true,
-            message: 'Profile picture upload skipped',
-            data: {
+        return successResponse(
+            res, 
+            {
                 user,
                 registrationComplete: true
-            }
-        });
+            },
+            'Profile picture upload skipped',
+            200
+        );
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Error skipping profile picture',
-            details: error.message
-        });
+        return errorResponse(res, 'Error skipping profile picture', 500, error.message);
     }
 });
 
@@ -355,26 +304,21 @@ const logoutUser = asyncHandler(async (req, res) => {
     try {
         const user = await User.findById(req.user._id);
         if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: "User not found"
-            });
+            return errorResponse(res, "User not found", 404);
         }
 
-        // Clear the token
+        // Clear tokens
         user.token = null;
         await user.save();
 
-        res.json({
-            success: true,
-            message: "Logged out successfully"
-        });
+        return successResponse(
+            res, 
+            {},
+            "Logged out successfully",
+            200
+        );
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: "Logout failed",
-            error: error.message
-        });
+        return errorResponse(res, "Logout failed", 500, error.message);
     }
 });
 
@@ -384,7 +328,6 @@ module.exports = {
     getAllUsers,
     getUserById,
     updateUserById,
-    updatePrivacy,
     uploadProfilePicture,
     skipProfilePicture,
     logoutUser

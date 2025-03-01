@@ -40,6 +40,7 @@ const userSchema = new mongoose.Schema(
         message: props => `${props.value} is not a valid phone number!`
       },
       required: [true, 'Phone number is required'],
+      
     },
     password: {
       type: String,
@@ -60,7 +61,6 @@ const userSchema = new mongoose.Schema(
     },
     privacy: {
       type: String,
-      enum: ['public', 'private'],
       default: 'public',
     },
     lastLogin: {
@@ -69,11 +69,10 @@ const userSchema = new mongoose.Schema(
     },
     jainAadharNumber: {
       type: String,
-      sparse: true, 
     },
     jainAadharStatus: {
       type: String,
-      enum: ['none', 'pending', 'verified'],
+      enum: ['none', 'pending', 'verified', 'rejected'],
       default: 'none'
     },
     jainAadharApplication: {
@@ -154,11 +153,16 @@ const userSchema = new mongoose.Schema(
 userSchema.pre('save', hashPassword);
 userSchema.methods.isPasswordMatched = isPasswordMatched;
 
-userSchema.index({ phoneNumber: 1 }, { unique: true });
-userSchema.index({ jainAadharNumber: 1 }, { sparse: true, unique: true });
+// Update indexes to match schema changes
+userSchema.index({ phoneNumber: 1 }); 
+userSchema.index({ jainAadharNumber: 1 }, { sparse: true }); 
 userSchema.index({ jainAadharStatus: 1 });
 userSchema.index({ role: 1 });
 userSchema.index({ createdAt: -1 });
+
+// Add compound indexes for common query patterns
+userSchema.index({ role: 1, createdAt: -1 }); 
+userSchema.index({ jainAadharStatus: 1, createdAt: -1 }); 
 
 userSchema.methods.incrementLoginAttempts = async function() {
     this.loginAttempts += 1;

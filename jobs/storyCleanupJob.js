@@ -1,7 +1,7 @@
 const Story = require('../model/SocialMediaModels/storyModel');
 const User = require('../model/UserRegistrationModels/userModel');
 const { DeleteObjectsCommand } = require('@aws-sdk/client-s3');
-const s3Client = require('../config/s3Config');
+const { s3Client } = require('../config/s3Config');
 
 // Story cleanup function
 const cleanupExpiredStories = async () => {

@@ -1,4 +1,4 @@
-const { S3Client } = require("@aws-sdk/client-s3");
+const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const dotenv = require('dotenv');
 
 dotenv.config();
@@ -13,7 +13,7 @@ requiredEnvVars.forEach(envVar => {
 
 // Create S3 client with retry configuration
 const s3Client = new S3Client({
-  region: process.env.AWS_REGION,
+  region: process.env.AWS_REGION || 'ap-south-1',
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
@@ -35,4 +35,4 @@ const testS3Connection = async () => {
 
 testS3Connection();
 
-module.exports = s3Client;
+module.exports = { s3Client, DeleteObjectCommand };

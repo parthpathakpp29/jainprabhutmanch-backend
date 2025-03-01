@@ -83,6 +83,31 @@ const initializeWebSocket = (server) => {
       });
     });
 
+    // Add message delivery status
+    socket.on('messageDelivered', (data) => {
+      const { messageId, senderId } = data;
+      socket.to(senderId.toString()).emit('messageDeliveryStatus', {
+        messageId,
+        status: 'delivered',
+        deliveredAt: new Date()
+      });
+    });
+
+    // Handle group typing
+    socket.on('typingInGroup', ({ groupId }) => {
+      const groupChatController = require('../controller/SocialMediaControllers/groupChatController');
+      groupChatController.handleGroupTyping(socket, groupId);
+    });
+
+    // Handle group message read status
+    socket.on('groupMessageRead', ({ groupId, messageId }) => {
+      socket.to(`group:${groupId}`).emit('groupMessageReadStatus', {
+        messageId,
+        readBy: socket.userId,
+        readAt: new Date()
+      });
+    });
+
     // Handle errors
     socket.on('error', (error) => {
       console.error('Socket error:', error);

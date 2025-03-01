@@ -1,12 +1,33 @@
 const mongoose = require("mongoose")
 
-const dbConnect = () => {
-   try{
-       const conn = mongoose.connect(process.env.MONGODB_URL);
-       console.log("Database Connected Successfully");
+const dbConnect = async () => {
+   try {
+       const conn = await mongoose.connect(process.env.MONGODB_URL, {
+           // Performance and reliability options
+           maxPoolSize: 15, 
+           serverSelectionTimeoutMS: 5000, 
+           socketTimeoutMS: 45000, 
+           family: 4 
+       });
+       console.log(`MongoDB Connected: ${conn.connection.host}`);
+       
+       
+       mongoose.connection.on('error', (err) => {
+           console.error(`MongoDB connection error: ${err}`);
+       });
+       
+       // Handle disconnection
+       mongoose.connection.on('disconnected', () => {
+           console.log('MongoDB disconnected, attempting to reconnect...');
+       });
    }
    catch(error) {
-    console.log(`Error:${error.message}`);
+    console.error(`MongoDB connection error: ${error.message}`);
+    // Exit with failure in production
+    if (process.env.NODE_ENV === 'production') {
+        process.exit(1);
+    }
    }
 }
+
 module.exports = dbConnect;

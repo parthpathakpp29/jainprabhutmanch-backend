@@ -4,9 +4,9 @@ const notificationSchema = new mongoose.Schema(
   {
     senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     receiverId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    type: { type: String, enum: ['follow_request', 'follow_request_accepted', 'like', 'comment', 'reply'], required: true },
+    type: { type: String, enum: ['new_follower', 'like', 'comment', 'reply'], required: true },
     message: { type: String, required: true },
-    isRead: { type: Boolean, default: false, index: true }, // Index added for faster queries
+    isRead: { type: Boolean, default: false, index: true }, 
   },
   { timestamps: true }
 );

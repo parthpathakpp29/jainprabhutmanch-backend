@@ -2,100 +2,90 @@ const Friendship = require('../../model/SocialMediaModels/friendshipModel');
 const asyncHandler = require('express-async-handler');
 const Notification = require('../../model/SocialMediaModels/notificationModel');
 const { getIo } = require('../../websocket/socket');
+const { successResponse, errorResponse } = require('../../utils/apiResponse');
 
 // Follow a user
 const followUser = asyncHandler(async (req, res) => {
   const { followerId, followingId } = req.body;
 
   if (followerId === followingId) {
-    return res.status(400).json({ message: 'You cannot follow yourself' });
+    return errorResponse(res, 'You cannot follow yourself', 400);
   }
 
-  const existingFriendship = await Friendship.findOne({ follower: followerId, following: followingId });
+  const existingFriendship = await Friendship.findOne({ 
+    follower: followerId, 
+    following: followingId 
+  });
+
   if (existingFriendship) {
-    return res.status(400).json({ message: 'Already following this user' });
+    return errorResponse(res, 'Already following this user', 400);
   }
 
-  const newFriendship = await Friendship.create({ follower: followerId, following: followingId, status: 'pending' });
+  const newFriendship = await Friendship.create({ 
+    follower: followerId, 
+    following: followingId 
+  });
 
-  // Send a follow request notification
+  // Send a follow notification
   const notification = new Notification({
     senderId: followerId,
     receiverId: followingId,
-    type: 'follow_request',
-    message: 'You have a new follow request.',
+    type: 'new_follower',
+    message: 'started following you.',
   });
   await notification.save();
 
-  // Emit the notification event to the receiver
+  // Emit the notification event
   const io = getIo();
   io.to(followingId.toString()).emit('newNotification', notification);
 
-  res.status(201).json({ message: 'User follow request sent successfully', friendship: newFriendship });
+  return successResponse(res, { friendship: newFriendship }, 'Successfully followed user', 201);
 });
 
 // Unfollow a user
 const unfollowUser = asyncHandler(async (req, res) => {
   const { followerId, followingId } = req.body;
 
-  const friendship = await Friendship.findOneAndDelete({ follower: followerId, following: followingId });
+  const friendship = await Friendship.findOneAndDelete({ 
+    follower: followerId, 
+    following: followingId 
+  });
+
   if (!friendship) {
-    return res.status(404).json({ message: 'Follow relationship not found' });
+    return errorResponse(res, 'Not following this user', 400);
   }
 
-  res.status(200).json({ message: 'User unfollowed successfully' });
+  return successResponse(res, null, 'Successfully unfollowed user');
 });
 
-// Get all followers for a user
+// Get followers of a user
 const getFollowers = asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const followers = await Friendship.find({ following: userId, status: 'accepted' })
-    .populate('follower', 'userName email profilePicture');
-  res.json(followers);
+
+  const followers = await Friendship.find({ following: userId })
+    .populate('follower', 'firstName lastName fullName profilePicture');
+
+  return successResponse(res, followers, 'Followers retrieved successfully');
 });
 
-// Get all users a user is following
+// Get users that a user is following
 const getFollowing = asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const following = await Friendship.find({ follower: userId, status: 'accepted' })
-    .populate('following', 'userName email profilePicture');
-  res.json(following);
+
+  const following = await Friendship.find({ follower: userId })
+    .populate('following', 'firstName lastName fullName profilePicture');
+
+  return successResponse(res, following, 'Following list retrieved successfully');
 });
 
 // Check if a user is following another user
 const checkFollowStatus = asyncHandler(async (req, res) => {
   const { followerId, followingId } = req.body;
-  const existingFriendship = await Friendship.findOne({ follower: followerId, following: followingId });
-  res.status(200).json({ status: existingFriendship ? existingFriendship.status : 'not-following' });
-});
-
-// Accept a follow request
-const acceptFollowRequest = asyncHandler(async (req, res) => {
-  const { followerId, followingId } = req.body;
-  const updatedFriendship = await Friendship.findOneAndUpdate(
-    { follower: followerId, following: followingId, status: 'pending' },
-    { status: 'accepted' },
-    { new: true }
-  );
-
-  if (!updatedFriendship) {
-    return res.status(404).json({ message: 'Follow request not found or already accepted' });
-  }
-
-  // Send a follow request accepted notification
-  const notification = new Notification({
-    senderId: followingId,
-    receiverId: followerId,
-    type: 'follow_request_accepted',
-    message: 'Your follow request has been accepted.',
+  const existingFriendship = await Friendship.findOne({ 
+    follower: followerId, 
+    following: followingId 
   });
-  await notification.save();
-
-  // Emit the notification event to the receiver
-  const io = getIo();
-  io.to(followerId.toString()).emit('newNotification', notification);
-
-  res.status(200).json({ message: 'Follow request accepted', friendship: updatedFriendship });
+  return successResponse(res, { isFollowing: !!existingFriendship }, 'Follow status retrieved successfully');
 });
 
 module.exports = {
@@ -103,6 +93,5 @@ module.exports = {
   unfollowUser,
   getFollowers,
   getFollowing,
-  checkFollowStatus,
-  acceptFollowRequest,
+  checkFollowStatus
 };

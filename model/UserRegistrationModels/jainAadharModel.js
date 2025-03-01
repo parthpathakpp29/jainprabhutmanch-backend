@@ -100,9 +100,16 @@ const jainAadharSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Optimize indexes for common query patterns
 jainAadharSchema.index({ userId: 1 });
 jainAadharSchema.index({ status: 1 });
 jainAadharSchema.index({ phoneNumber: 1 });
+// Add compound indexes for common query patterns
+jainAadharSchema.index({ status: 1, createdAt: -1 }); // For admin dashboards listing applications by status and date
+jainAadharSchema.index({ userId: 1, status: 1 }); // For quickly finding a user's application with a specific status
+
+// Add TTL index for auto-expiring pending applications after 90 days if needed
+// jainAadharSchema.index({ createdAt: 1 }, { expireAfterSeconds: 7776000, partialFilterExpression: { status: 'pending' } });
 
 // Export the model
 module.exports = mongoose.model('JainAadhar', jainAadharSchema);

@@ -3,15 +3,13 @@ const User = require('../../model/UserRegistrationModels/userModel');
 const asyncHandler = require('express-async-handler');
 const { validationResult } = require('express-validator');
 const { jainAadharValidation } = require('../../validators/validations');
+const { successResponse, errorResponse } = require('../../utils/apiResponse');
 
 // Check if user has existing application
 const checkExistingApplication = asyncHandler(async (req, res, next) => {
-  const existingApplication = await JainAadhar.findOne({ userId: req.user._id, status: { $ne: 'rejected' } });
+  const existingApplication = await JainAadhar.findOne({ userId: req.user._id, status: { $in: ['pending', 'approved'] } });
   if (existingApplication) {
-    return res.status(400).json({
-      success: false,
-      message: 'You already have a pending Jain Aadhar application'
-    });
+    return errorResponse(res, 'You already have a pending or approved Jain Aadhar application', 400);
   }
   next();
 });
@@ -23,7 +21,7 @@ const createJainAadhar = [
   asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: errors.array() });
+      return errorResponse(res, 'Validation failed', 400, errors.array());
     }
 
     try {
@@ -33,10 +31,7 @@ const createJainAadhar = [
       const userProfileUrl = req.files['userProfile']?.[0]?.location;
 
       if (!panCardUrl || !aadharCardUrl || !userProfileUrl) {
-        return res.status(400).json({
-          success: false,
-          message: 'All required documents must be uploaded'
-        });
+        return errorResponse(res, 'All required documents must be uploaded', 400);
       }
 
       const jainAadharData = {
@@ -56,17 +51,9 @@ const createJainAadhar = [
         jainAadharApplication: newJainAadhar._id
       });
 
-      res.status(201).json({
-        success: true,
-        message: 'Jain Aadhar application submitted successfully',
-        data: newJainAadhar
-      });
+      return successResponse(res, newJainAadhar, 'Jain Aadhar application submitted successfully', 201);
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        message: 'Error creating Jain Aadhar application',
-        error: error.message
-      });
+      return errorResponse(res, 'Error creating Jain Aadhar application', 500, error.message);
     }
   })
 ];
@@ -78,26 +65,16 @@ const getApplicationStatus = asyncHandler(async (req, res) => {
       .select('-PanCard -AadharCard');
 
     if (!application) {
-      return res.status(404).json({
-        success: false,
-        message: 'No Jain Aadhar application found'
-      });
+      return errorResponse(res, 'No Jain Aadhar application found', 404);
     }
 
-    res.json({
-      success: true,
-      data: {
-        status: application.status,
-        applicationId: application._id,
-        submittedAt: application.createdAt
-      }
-    });
+    return successResponse(res, {
+      status: application.status,
+      applicationId: application._id,
+      submittedAt: application.createdAt
+    }, 'Application status retrieved successfully');
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching application status',
-      error: error.message
-    });
+    return errorResponse(res, 'Error fetching application status', 500, error.message);
   }
 });
 
@@ -108,17 +85,9 @@ const getAllApplications = asyncHandler(async (req, res) => {
       .populate('userId', 'firstName lastName email')
       .sort('-createdAt');
 
-    res.json({
-      success: true,
-      count: applications.length,
-      data: applications
-    });
+    return successResponse(res, applications, 'Applications retrieved successfully', 200, applications.length);
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching applications',
-      error: error.message
-    });
+    return errorResponse(res, 'Error fetching applications', 500, error.message);
   }
 });
 
@@ -145,17 +114,11 @@ const reviewApplication = asyncHandler(async (req, res) => {
 
     const application = await JainAadhar.findById(id);
     if (!application) {
-      return res.status(404).json({
-        success: false,
-        message: 'Application not found'
-      });
+      return errorResponse(res, 'Application not found', 404);
     }
 
     if (application.status === 'approved' || application.status === 'rejected') {
-      return res.status(400).json({
-        success: false,
-        message: `Application already ${application.status}`
-      });
+      return errorResponse(res, `Application already ${application.status}`, 400);
     }
 
     let updateData = {
@@ -192,16 +155,9 @@ const reviewApplication = asyncHandler(async (req, res) => {
       { new: true }
     ).populate('userId', 'firstName lastName email');
 
-    res.json({
-      success: true,
-      message: `Application ${status}. ${status === 'approved' ? `Jain Aadhar Number: ${updateData.jainAadharNumber}` : ''}`,
-      data: updatedApplication
-    });
+    return successResponse(res, updatedApplication, `Application ${status}. ${status === 'approved' ? `Jain Aadhar Number: ${updateData.jainAadharNumber}` : ''}`);
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    return errorResponse(res, error.message, 500);
   }
 });
 
@@ -225,19 +181,12 @@ const getApplicationStats = asyncHandler(async (req, res) => {
       createdAt: { $gte: todayStart }
     });
 
-    res.json({
-      success: true,
-      data: {
-        overall: stats,
-        today: todayStats
-      }
-    });
+    return successResponse(res, {
+      overall: stats,
+      today: todayStats
+    }, 'Application statistics retrieved successfully');
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching statistics',
-      error: error.message
-    });
+    return errorResponse(res, 'Error fetching statistics', 500, error.message);
   }
 });
 
@@ -250,22 +199,12 @@ const getApplicationDetails = asyncHandler(async (req, res) => {
       .populate('userId', 'firstName lastName email mobile');
 
     if (!application) {
-      return res.status(404).json({
-        success: false,
-        message: 'Application not found'
-      });
+      return errorResponse(res, 'Application not found', 404);
     }
 
-    res.json({
-      success: true,
-      data: application
-    });
+    return successResponse(res, application, 'Application details retrieved successfully');
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching application details',
-      error: error.message
-    });
+    return errorResponse(res, 'Error fetching application details', 500, error.message);
   }
 });
 
@@ -289,17 +228,9 @@ const addReviewComment = asyncHandler(async (req, res) => {
       { new: true }
     );
 
-    res.json({
-      success: true,
-      message: 'Review comment added',
-      data: application
-    });
+    return successResponse(res, application, 'Review comment added');
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error adding review comment',
-      error: error.message
-    });
+    return errorResponse(res, 'Error adding review comment', 500, error.message);
   }
 });
 
