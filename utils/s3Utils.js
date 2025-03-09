@@ -1,8 +1,4 @@
 /**
- * Utility functions for working with AWS S3
- */
-
-/**
  * Extract the S3 key from a full S3 URL
  * @param {string} url - The full S3 URL
  * @returns {string|null} - The extracted S3 key or null if not a valid S3 URL

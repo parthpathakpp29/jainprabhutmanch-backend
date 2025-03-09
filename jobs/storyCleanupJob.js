@@ -1,5 +1,5 @@
-const Story = require('../model/SocialMediaModels/storyModel');
-const User = require('../model/UserRegistrationModels/userModel');
+const Story = require('../models/SocialMediaModels/storyModel');
+const User = require('../models/UserRegistrationModels/userModel');
 const { DeleteObjectsCommand } = require('@aws-sdk/client-s3');
 const { s3Client } = require('../config/s3Config');
 

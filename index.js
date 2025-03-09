@@ -14,14 +14,10 @@ const { logMiddleware } = require('./middlewares/authMiddlewares');
 const jainAdharRouter = require('./routes/UserRegistrationRoutes/jainAdharRoute');
 const friendshipRoutes = require('./routes/SocialMediaRoutes/friendshipRoutes');
 const postRoutes = require('./routes/SocialMediaRoutes/postRoutes');
-const unitRoutes = require('./routes/unitRoute');
-const panchayatRoute = require('./routes/panchayatRoutes');
 const messageRoutes = require('./routes/SocialMediaRoutes/messageRoutes');
 const jainVyaparRoutes = require('./routes/jainVyaparRoutes');
 const tirthSanrakshanRoute = require('./routes/TirthSanrakshanRoute');
 const sadhuInfoRoutes = require('./routes/sadhuInfoRoutes');
-const ShanghatanIdPasswordRoute = require('./routes/ShanghatanIdPasswordRoute');
-const panchayatIdPasswordRoutes = require('./routes/panchayatIdPasswordRoutes');
 const tirthIdPasswordRoutes = require('./routes/tirthIdPasswordRoutes');
 const jainVyaparRoute = require('./routes/JainVyaparIdPassRoutes');
 const sadhuRoutes = require('./routes/sadhuRoutes');
@@ -34,13 +30,17 @@ const granthRoutes = require('./routes/jainGranthRoutes');
 const jainItihasRoutes = require('./routes/jainItihasRoutes');
 const storyRoutes = require('./routes/SocialMediaRoutes/storyRoutes');
 const notificationRoutes = require('./routes/SocialMediaRoutes/notificationRoutes');
-const Story = require('./model/SocialMediaModels/storyModel');
+const Story = require('./models/SocialMediaModels/storyModel');
 const govtYojanaRoutes = require('./routes/govtYojanaRoutes');
 const s3Client = require('./config/s3Config');
 const { initializeWebSocket, getIo } = require('./websocket/socket');
 const { scheduleStoryCleanup } = require('./jobs/storyCleanupJob');
 
-// Connect to database
+const sanghRoutes = require('./routes/SanghRoutes/sanghRoute');
+// Comment out fee routes
+// const feeRoutes = require('./routes/SanghRoutes/feeRoutes');
+const panchayatRoutes = require('./routes/SanghRoutes/panchRoutes');
+
 dbConnect();
 
 // Middleware
@@ -58,27 +58,28 @@ app.use("/api/user", authRouter);
 app.use("/api/jain-aadhar", jainAdharRouter);
 app.use("/api/friendship", friendshipRoutes);
 app.use("/api/posts", postRoutes);
-app.use("/api/unit", unitRoutes);
-app.use("/api/panchayat", panchayatRoute);
+app.use('/api/stories', storyRoutes);
+app.use('/api/notification', notificationRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/group-chats", groupChatRoutes); 
 app.use("/api/jainvyapar", jainVyaparRoutes);
 app.use("/api/tirthsanrakshan", tirthSanrakshanRoute);
 app.use("/api/sadhuinfo", sadhuInfoRoutes);
-app.use("/api/shanghatan", ShanghatanIdPasswordRoute);
-app.use("/api/panchayatidpassword", panchayatIdPasswordRoutes);
+
 app.use("/api/tirthidpassword", tirthIdPasswordRoutes);
 app.use("/api/jainvyaparidpassword", jainVyaparRoute);
 app.use("/api/sadhu", sadhuRoutes);
 app.use("/api/biodata", biodataRoutes);
-app.use("/api/group-chats", groupChatRoutes); // Corrected route
 app.use("/api/rojgar", rojgarRoutes);
 app.use("/api/reporting", reportingRoutes);
 app.use('/api/suggestion-complaint', suggestionComplaintRoutes);
 app.use("/api/granth", granthRoutes);
 app.use("/api/jainitihas", jainItihasRoutes);
-app.use('/api/stories', storyRoutes);
-app.use('/api/notification', notificationRoutes);
 app.use('/api/yojana', govtYojanaRoutes);
+app.use('/api/sangh', sanghRoutes);
+// Comment out fee routes
+// app.use('/api/fees', feeRoutes);
+app.use('/api/panch', panchayatRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
@@ -96,7 +97,6 @@ app.use(errorHandler);
 // Create HTTP server
 const server = http.createServer(app);
 
-// Initialize WebSocket with mobile-friendly config
 const io = initializeWebSocket(server);
 app.set('socketio', io);
 

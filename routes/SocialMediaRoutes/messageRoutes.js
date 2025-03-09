@@ -6,7 +6,7 @@ const {
   getMessages, 
   getUnreadMessagesCount, 
   deleteMessageById
-} = require('../../controller/SocialMediaControllers/messageController');
+} = require('../../controllers/SocialMediaControllers/messageController');
 const { authenticate } = require('../../middlewares/authMiddlewares');
 const upload = require('../../middlewares/uploadMiddleware');
 const { check, param, query } = require('express-validator');

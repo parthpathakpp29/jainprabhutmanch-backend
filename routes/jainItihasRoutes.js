@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { createJainItihas, getAllJainItihas, updateJainItihas, deleteJainItihas, likeJainItihas } = require("../controller/jainItihasController");
+const { createJainItihas, getAllJainItihas, updateJainItihas, deleteJainItihas, likeJainItihas } = require("../controllers/jainItihasController");
 const upload = require("../middlewares/uploadMiddleware");
 
 

@@ -8,7 +8,7 @@ const {
   getApplicationStats,
   getApplicationDetails,
   addReviewComment
-} = require('../../controller/UserRegistrationControllers/jainAdharController');
+} = require('../../controllers/UserRegistrationControllers/jainAdharController');
 const { authMiddleware, isAdmin } = require('../../middlewares/authMiddlewares');
 const upload = require('../../middlewares/uploadMiddleware');
 const rateLimit = require('express-rate-limit');

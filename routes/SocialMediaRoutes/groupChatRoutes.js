@@ -14,7 +14,7 @@ const {
   checkMembership,
   addMembers,
   updateGroupName
-} = require('../../controller/SocialMediaControllers/groupChatController');
+} = require('../../controllers/SocialMediaControllers/groupChatController');
 const { authenticate } = require('../../middlewares/authMiddlewares');
 const upload = require('../../middlewares/uploadMiddleware');
 

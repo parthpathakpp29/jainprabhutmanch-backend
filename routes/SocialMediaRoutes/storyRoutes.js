@@ -1,5 +1,5 @@
 const express = require('express');
-const { createStory, getAllStories, getStoriesByUser, deleteStory } = require('../../controller/SocialMediaControllers/storyController');
+const { createStory, getAllStories, getStoriesByUser, deleteStory } = require('../../controllers/SocialMediaControllers/storyController');
 const upload = require('../../middlewares/uploadMiddleware');
 const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const { param, validationResult } = require('express-validator');

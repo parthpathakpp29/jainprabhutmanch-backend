@@ -1,5 +1,5 @@
 const express = require('express');
-const { sendNotification, getNotifications, markAsRead } = require('../../controller/SocialMediaControllers/notificationController');
+const { sendNotification, getNotifications, markAsRead } = require('../../controllers/SocialMediaControllers/notificationController');
 const router = express.Router();
 
 router.post('/send', sendNotification);

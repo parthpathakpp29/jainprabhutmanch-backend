@@ -13,7 +13,7 @@ const {
   hidePost,
   unhidePost,
   deleteMediaItem
-} = require('../../controller/SocialMediaControllers/postController');
+} = require('../../controllers/SocialMediaControllers/postController');
 const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const { check, param } = require('express-validator');
 const rateLimit = require('express-rate-limit');

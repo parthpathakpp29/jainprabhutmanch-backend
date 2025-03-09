@@ -20,6 +20,8 @@ services:
         sync: false
       - key: AWS_REGION
         sync: false
+      - key: MESSAGE_ENCRYPTION_KEY
+        sync: false
       - key: AWS_BUCKET_NAME
         sync: false
     healthCheckPath: /api/health 

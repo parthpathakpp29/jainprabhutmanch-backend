@@ -1,5 +1,5 @@
 const express = require('express');
-const { createSadhuInfo, getAllSadhuInfo, getSadhuInfoById } = require('../controller/SadhuInfoController');
+const { createSadhuInfo, getAllSadhuInfo, getSadhuInfoById } = require('../controllers/SadhuInfoController');
 const router = express.Router();
 
 

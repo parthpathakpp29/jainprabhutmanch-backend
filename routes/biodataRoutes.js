@@ -1,5 +1,5 @@
 const express = require('express');
-const { createBiodata, updateBiodata, getBiodata, getAllBiodatas } = require('../controller/vyavahikBiodataController');
+const { createBiodata, updateBiodata, getBiodata, getAllBiodatas } = require('../controllers/vyavahikBiodataController');
 const router = express.Router();
 
 // Create a new biodata

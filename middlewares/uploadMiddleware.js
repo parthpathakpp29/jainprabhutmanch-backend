@@ -55,6 +55,23 @@ const getS3Folder = (fieldname) => {
       return 'posts/videos/';
     case 'media': // For stories
       return 'stories/';
+    // Add Sangathan document folders
+    case 'presidentJainAadhar':
+      return 'sangathan/documents/president/';
+    case 'secretaryJainAadhar':
+      return 'sangathan/documents/secretary/';
+    case 'treasurerJainAadhar':
+      return 'sangathan/documents/treasurer/';
+    case 'presidentPhoto':
+      return 'sangathan/photos/president/';
+    case 'secretaryPhoto':
+      return 'sangathan/photos/secretary/';
+    case 'treasurerPhoto':
+      return 'sangathan/photos/treasurer/';
+    case 'jainAadharPhoto':
+      return 'sangathan/panch/documents/';
+    case 'profilePhoto':
+      return 'sangathan/panch/photos/';
     default:
       return 'others/';
   }
@@ -103,15 +120,15 @@ const handleMulterError = (err, req, res, next) => {
 
 // Add this to the multer configuration
 const optimizeImage = async (req, res, next) => {
-  if (!req.file || !['profilePicture', 'chatImage', 'groupIcon', 'image', 'media'].includes(req.file.fieldname)) return next();
+  if (!req.file || !['profilePicture', 'chatImage', 'groupIcon', 'image', 'media', 'presidentPhoto', 'secretaryPhoto', 'treasurerPhoto'].includes(req.file.fieldname)) return next();
 
   try {
     const optimized = await sharp(req.file.buffer)
-      .resize(800, 800, { // Standard size for images
+      .resize(800, 800, {
         fit: 'cover',
         position: 'center'
       })
-      .jpeg({ quality: 80 }) // Compress and convert to JPEG
+      .jpeg({ quality: 80 })
       .toBuffer();
 
     req.file.buffer = optimized;
@@ -136,3 +153,27 @@ module.exports.postMediaUpload = [upload.fields([
   { name: 'video', maxCount: 10 }
 ]), optimizeImage];
 module.exports.optimizeGroupIcon = optimizeImage;
+
+// Add Sangathan document upload configuration
+module.exports.sangathanDocs = upload.fields([
+  { name: 'presidentJainAadhar', maxCount: 1 },
+  { name: 'secretaryJainAadhar', maxCount: 1 },
+  { name: 'treasurerJainAadhar', maxCount: 1 },
+  { name: 'presidentPhoto', maxCount: 1 },
+  { name: 'secretaryPhoto', maxCount: 1 },
+  { name: 'treasurerPhoto', maxCount: 1 }
+]);
+
+// Add specific Panch document upload configuration for all 5 members
+module.exports.panchGroupDocs = upload.fields([
+    { name: 'members[0].jainAadharPhoto', maxCount: 1 },
+    { name: 'members[0].profilePhoto', maxCount: 1 },
+    { name: 'members[1].jainAadharPhoto', maxCount: 1 },
+    { name: 'members[1].profilePhoto', maxCount: 1 },
+    { name: 'members[2].jainAadharPhoto', maxCount: 1 },
+    { name: 'members[2].profilePhoto', maxCount: 1 },
+    { name: 'members[3].jainAadharPhoto', maxCount: 1 },
+    { name: 'members[3].profilePhoto', maxCount: 1 },
+    { name: 'members[4].jainAadharPhoto', maxCount: 1 },
+    { name: 'members[4].profilePhoto', maxCount: 1 }
+]);

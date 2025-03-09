@@ -5,7 +5,7 @@ const {
     getFollowers, 
     getFollowing, 
     checkFollowStatus
-} = require('../../controller/SocialMediaControllers/friendshipController');
+} = require('../../controllers/SocialMediaControllers/friendshipController');
 const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const { check, param, validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');

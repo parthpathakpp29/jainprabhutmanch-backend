@@ -1,5 +1,5 @@
 const express = require('express');
-const { createJainVyapar, getAllJainVyapar, getJainVyaparById, updateJainVyapar } = require('../controller/jainVyaparController');
+const { createJainVyapar, getAllJainVyapar, getJainVyaparById, updateJainVyapar } = require('../controllers/jainVyaparController');
 const router = express.Router();
 
 // Create a new entry

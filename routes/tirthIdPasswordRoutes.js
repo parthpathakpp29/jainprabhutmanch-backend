@@ -1,5 +1,5 @@
 const express = require('express');
-const { createTirthIdPassword } = require('../controller/tirthIdPasswordController');
+const { createTirthIdPassword } = require('../controllers/tirthIdPasswordController');
 const router = express.Router();
 
 router.post('/create', createTirthIdPassword);

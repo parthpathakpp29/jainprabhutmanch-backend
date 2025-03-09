@@ -1,5 +1,5 @@
 const express = require('express');
-const { createReport, getReportById, getAllReports, updateReport, deleteReport } = require('../controller/reportingController');
+const { createReport, getReportById, getAllReports, updateReport, deleteReport } = require('../controllers/reportingController');
 const router = express.Router();
 
 // POST: Create a new report

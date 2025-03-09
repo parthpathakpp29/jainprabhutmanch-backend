@@ -1,5 +1,5 @@
 const express = require('express');
-const { createJainIdPass } = require('../controller/JainVyaparIdPassController');
+const { createJainIdPass } = require('../controllers/JainVyaparIdPassController');
 const router = express.Router();
 
 // Create Jain Vyapar ID and Password

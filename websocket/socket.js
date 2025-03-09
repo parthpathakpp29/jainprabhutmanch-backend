@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 
 let io;
 const userSockets = new Map();
-const userStatus = new Map(); // Store user status in memory
+const userStatus = new Map(); 
 const messageQueue = new Map();
 
 const initializeWebSocket = (server) => {
@@ -95,7 +95,7 @@ const initializeWebSocket = (server) => {
 
     // Handle group typing
     socket.on('typingInGroup', ({ groupId }) => {
-      const groupChatController = require('../controller/SocialMediaControllers/groupChatController');
+      const groupChatController = require('../controllers/SocialMediaControllers/groupChatController');
       groupChatController.handleGroupTyping(socket, groupId);
     });
 

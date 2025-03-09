@@ -6,7 +6,7 @@ const {
     updateComment,
     likeComment,
     unlikeComment
-} = require('../../controller/SocialMediaControllers/commentController');
+} = require('../../controllers/SocialMediaControllers/commentController');
 const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const { body, param, validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');

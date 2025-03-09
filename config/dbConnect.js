@@ -3,7 +3,6 @@ const mongoose = require("mongoose")
 const dbConnect = async () => {
    try {
        const conn = await mongoose.connect(process.env.MONGODB_URL, {
-           // Performance and reliability options
            maxPoolSize: 15, 
            serverSelectionTimeoutMS: 5000, 
            socketTimeoutMS: 45000, 
@@ -23,7 +22,6 @@ const dbConnect = async () => {
    }
    catch(error) {
     console.error(`MongoDB connection error: ${error.message}`);
-    // Exit with failure in production
     if (process.env.NODE_ENV === 'production') {
         process.exit(1);
     }
