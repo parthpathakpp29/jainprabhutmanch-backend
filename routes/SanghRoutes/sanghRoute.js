@@ -7,15 +7,12 @@ const {
   getSanghById,
   manageMember,
   updateSangh,
-  getHierarchy,
-  editMemberDetails,
-  checkTenureStatus,
-  replaceOfficeBearer,
-  getTenureHistory
+  editMemberDetails
 } = require('../../controllers/SanghControllers/sanghController');
-const { authMiddleware, isAdmin } = require('../../middlewares/authMiddlewares');
+const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const { sangathanDocs } = require('../../middlewares/uploadMiddleware');
-const { isPresident, isOfficeBearer } = require('../../middlewares/sanghPermissions');
+const { isPresident } = require('../../middlewares/sanghPermissions');
+const { upload } = require('../../middlewares/uploadMiddleware');
 
 // Protect all routes
 router.use(authMiddleware);
@@ -24,19 +21,21 @@ router.use(authMiddleware);
 router.post('/create', sangathanDocs, createSangh);
 router.get('/', getAllSanghs);
 router.get('/:id', getSanghById);
-router.put('/:id', isPresident, sangathanDocs, updateSangh);
 
-// Member management routes
+// Protected routes that require president access
+router.put('/:id', isPresident, sangathanDocs, updateSangh);
 router.post('/:sanghId/members', isPresident, manageMember);
 router.delete('/:sanghId/members/:memberId', isPresident, manageMember);
-router.put('/:sanghId/members/:memberId', isPresident, sangathanDocs, editMemberDetails);
 
-// Hierarchy routes
-router.get('/:id/hierarchy', getHierarchy);
+// Add new route for editing member details
+router.put(
+  '/:sanghId/members/:memberId',
+  isPresident,
+  sangathanDocs,
+  editMemberDetails
+);
 
-// Office bearer management routes
-router.get('/:sanghId/tenure-status', isOfficeBearer, checkTenureStatus);
-router.post('/:sanghId/replace-bearer', isPresident, sangathanDocs, replaceOfficeBearer);
-router.get('/:sanghId/tenure-history', isOfficeBearer, getTenureHistory);
+// Error handling middleware
+
 
 module.exports = router;
