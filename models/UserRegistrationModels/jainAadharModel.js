@@ -93,9 +93,64 @@ const jainAadharSchema = new mongoose.Schema(
     userProfile: { type: String },
    status: {
       type: String,
-      enum: ['pending', 'approved'],
+      enum: ['pending', 'approved', 'rejected'],
       default: 'pending',
     },
+    // New fields for level-specific review
+    applicationLevel: {
+      type: String,
+      enum: ['superadmin', 'country', 'state', 'district', 'city'],
+      required: true
+    },
+    reviewingSanghId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'HierarchicalSangh'
+    },
+    reviewedBy: {
+      userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      role: String,
+      level: String,
+      sanghId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'HierarchicalSangh'
+      }
+    },
+    reviewHistory: [{
+      action: {
+        type: String,
+        enum: ['submitted', 'reviewed', 'approved', 'rejected']
+      },
+      by: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      level: {
+        type: String,
+        enum: ['superadmin', 'country', 'state', 'district', 'city', 'user']
+      },
+      sanghId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'HierarchicalSangh'
+      },
+      remarks: String,
+      timestamp: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    location: {
+      country: {
+        type: String,
+        required: true,
+        default: 'India'
+      },
+      state: String,
+      district: String,
+      city: String
+    }
   },
   { timestamps: true }
 );
@@ -110,6 +165,12 @@ jainAadharSchema.index({ userId: 1, status: 1 }); // For quickly finding a user'
 
 // Add TTL index for auto-expiring pending applications after 90 days if needed
 // jainAadharSchema.index({ createdAt: 1 }, { expireAfterSeconds: 7776000, partialFilterExpression: { status: 'pending' } });
+
+// Add indexes for efficient querying
+jainAadharSchema.index({ applicationLevel: 1, status: 1 });
+jainAadharSchema.index({ 'location.state': 1, status: 1 });
+jainAadharSchema.index({ 'location.district': 1, status: 1 });
+jainAadharSchema.index({ 'location.city': 1, status: 1 });
 
 // Export the model
 module.exports = mongoose.model('JainAadhar', jainAadharSchema);

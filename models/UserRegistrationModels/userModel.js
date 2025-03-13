@@ -117,7 +117,9 @@ const userSchema = new mongoose.Schema(
         'manage_users',
         'verify_jain_aadhar',
         'manage_content',
-        'manage_reports'
+        'manage_reports',
+        'manage_sanghs',
+        'manage_admins'
       ]
     }],
     posts: [

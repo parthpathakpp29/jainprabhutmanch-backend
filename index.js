@@ -10,7 +10,7 @@ const bodyParser = require("body-parser");
 const { notFound, errorHandler } = require("./middlewares/errorHandler");
 const cors = require("cors");
 const authRouter = require('./routes/UserRegistrationRoutes/authRoute');
-const { logMiddleware } = require('./middlewares/authMiddlewares');
+const { logMiddleware, authMiddleware, isAdmin, isSuperAdmin } = require('./middlewares/authMiddlewares');
 const jainAdharRouter = require('./routes/UserRegistrationRoutes/jainAdharRoute');
 const friendshipRoutes = require('./routes/SocialMediaRoutes/friendshipRoutes');
 const postRoutes = require('./routes/SocialMediaRoutes/postRoutes');
@@ -35,11 +35,14 @@ const govtYojanaRoutes = require('./routes/govtYojanaRoutes');
 const s3Client = require('./config/s3Config');
 const { initializeWebSocket, getIo } = require('./websocket/socket');
 const { scheduleStoryCleanup } = require('./jobs/storyCleanupJob');
+const hierarchicalSanghRoutes = require('./routes/SanghRoutes/hierarchicalSanghRoute');
+const sanghAccessRoutes = require('./routes/SanghRoutes/sanghAccessRoute');
 
 const sanghRoutes = require('./routes/SanghRoutes/sanghRoute');
 // Comment out fee routes
 // const feeRoutes = require('./routes/SanghRoutes/feeRoutes');
 const panchayatRoutes = require('./routes/SanghRoutes/panchRoutes');
+
 
 dbConnect();
 
@@ -53,33 +56,40 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(logMiddleware);
 
-// Routes
+// Public routes
 app.use("/api/user", authRouter);
-app.use("/api/jain-aadhar", jainAdharRouter);
-app.use("/api/friendship", friendshipRoutes);
-app.use("/api/posts", postRoutes);
-app.use('/api/stories', storyRoutes);
-app.use('/api/notification', notificationRoutes);
-app.use("/api/messages", messageRoutes);
-app.use("/api/group-chats", groupChatRoutes); 
-app.use("/api/jainvyapar", jainVyaparRoutes);
-app.use("/api/tirthsanrakshan", tirthSanrakshanRoute);
-app.use("/api/sadhuinfo", sadhuInfoRoutes);
 
-app.use("/api/tirthidpassword", tirthIdPasswordRoutes);
-app.use("/api/jainvyaparidpassword", jainVyaparRoute);
-app.use("/api/sadhu", sadhuRoutes);
-app.use("/api/biodata", biodataRoutes);
-app.use("/api/rojgar", rojgarRoutes);
-app.use("/api/reporting", reportingRoutes);
-app.use('/api/suggestion-complaint', suggestionComplaintRoutes);
-app.use("/api/granth", granthRoutes);
-app.use("/api/jainitihas", jainItihasRoutes);
-app.use('/api/yojana', govtYojanaRoutes);
-app.use('/api/sangh', sanghRoutes);
-// Comment out fee routes
-// app.use('/api/fees', feeRoutes);
-app.use('/api/panch', panchayatRoutes);
+// Protected routes (require authentication)
+app.use("/api/jain-aadhar", authMiddleware, jainAdharRouter);
+app.use("/api/friendship", authMiddleware, friendshipRoutes);
+app.use("/api/posts", authMiddleware, postRoutes);
+app.use('/api/stories', authMiddleware, storyRoutes);
+app.use('/api/notification', authMiddleware, notificationRoutes);
+app.use("/api/messages", authMiddleware, messageRoutes);
+app.use("/api/group-chats", authMiddleware, groupChatRoutes);
+
+// Admin protected routes
+app.use("/api/jainvyapar", [authMiddleware, isAdmin], jainVyaparRoutes);
+app.use("/api/tirthsanrakshan", [authMiddleware, isAdmin], tirthSanrakshanRoute);
+app.use("/api/sadhuinfo", [authMiddleware, isAdmin], sadhuInfoRoutes);
+app.use("/api/tirthidpassword", [authMiddleware, isAdmin], tirthIdPasswordRoutes);
+app.use("/api/jainvyaparidpassword", [authMiddleware, isAdmin], jainVyaparRoute);
+app.use("/api/sadhu", [authMiddleware, isAdmin], sadhuRoutes);
+app.use("/api/biodata", [authMiddleware, isAdmin], biodataRoutes);
+app.use("/api/rojgar", [authMiddleware, isAdmin], rojgarRoutes);
+app.use("/api/reporting", [authMiddleware, isAdmin], reportingRoutes);
+app.use('/api/suggestion-complaint', [authMiddleware, isAdmin], suggestionComplaintRoutes);
+app.use("/api/granth", [authMiddleware, isAdmin], granthRoutes);
+app.use("/api/jainitihas", [authMiddleware, isAdmin], jainItihasRoutes);
+app.use('/api/yojana', [authMiddleware, isAdmin], govtYojanaRoutes);
+
+// For Future
+// app.use('/api/sangh', [authMiddleware, isSuperAdmin], sanghRoutes);
+// app.use('/api/panch', [authMiddleware, isSuperAdmin], panchayatRoutes);
+
+
+app.use('/api/hierarchical-sangh', authMiddleware, hierarchicalSanghRoutes);
+app.use('/api/sangh-access', authMiddleware, sanghAccessRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

@@ -1,0 +1,126 @@
+const mongoose = require('mongoose');
+const crypto = require('crypto');
+
+const sanghAccessSchema = new mongoose.Schema({
+    accessId: {
+        type: String,
+    },
+    sanghId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'HierarchicalSangh',
+        required: true
+    },
+    level: {
+        type: String,
+        enum: ['country', 'state', 'district', 'city'],
+        required: true
+    },
+    location: {
+        country: String,
+        state: String,
+        district: String,
+        city: String
+    },
+    parentSanghAccess: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'SanghAccess'
+    },
+    createdBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    status: {
+        type: String,
+        enum: ['active', 'inactive'],
+        default: 'active'
+    },
+    lastAccessed: {
+        type: Date,
+        default: Date.now
+    }
+}, {
+    timestamps: true
+});
+
+// Generate unique access ID before saving
+sanghAccessSchema.pre('save', async function(next) {
+    if (this.isNew && !this.accessId) {
+        const prefix = {
+            country: 'CNT',
+            state: 'ST',
+            district: 'DST',
+            city: 'CTY'
+        }[this.level];
+
+        const timestamp = Date.now().toString().slice(-6);
+        const random = crypto.randomBytes(3).toString('hex').toUpperCase();
+        
+        this.accessId = `${prefix}-${timestamp}-${random}`;
+    }
+    next();
+});
+
+// Validate location based on level
+sanghAccessSchema.pre('save', function(next) {
+    const requiredFields = {
+        city: ['country', 'state', 'district', 'city'],
+        district: ['country', 'state', 'district'],
+        state: ['country', 'state'],
+        country: ['country']
+    };
+
+    const required = requiredFields[this.level];
+    const missing = required.filter(field => !this.location[field]);
+
+    if (missing.length > 0) {
+        next(new Error(`Missing required location fields: ${missing.join(', ')}`));
+    }
+    next();
+});
+
+// Add indexes
+sanghAccessSchema.index({ accessId: 1 }, { unique: true });
+sanghAccessSchema.index({ sanghId: 1, status: 1 });
+sanghAccessSchema.index({ level: 1, status: 1 });
+sanghAccessSchema.index({ createdAt: -1 });
+
+// Add method to validate hierarchy
+sanghAccessSchema.methods.validateHierarchy = async function() {
+    if (this.parentSanghAccess) {
+        const parent = await this.model('SanghAccess').findById(this.parentSanghAccess);
+        if (!parent) {
+            throw new Error('Parent Sangh access not found');
+        }
+
+        const hierarchyOrder = ['country', 'state', 'district', 'city'];
+        const parentIndex = hierarchyOrder.indexOf(parent.level);
+        const currentIndex = hierarchyOrder.indexOf(this.level);
+
+        if (currentIndex <= parentIndex) {
+            throw new Error(`${this.level} level cannot be created under ${parent.level} level`);
+        }
+
+        // Validate location hierarchy
+        switch (this.level) {
+            case 'state':
+                if (this.location.country !== parent.location.country) {
+                    throw new Error('State must belong to parent country');
+                }
+                break;
+            case 'district':
+                if (this.location.state !== parent.location.state) {
+                    throw new Error('District must belong to parent state');
+                }
+                break;
+            case 'city':
+                if (this.location.district !== parent.location.district) {
+                    throw new Error('City must belong to parent district');
+                }
+                break;
+        }
+    }
+    return true;
+};
+
+module.exports = mongoose.model('SanghAccess', sanghAccessSchema); 

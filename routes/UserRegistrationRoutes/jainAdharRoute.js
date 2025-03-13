@@ -7,24 +7,29 @@ const {
   reviewApplication,
   getApplicationStats,
   getApplicationDetails,
-  addReviewComment
+  addReviewComment,
+  getApplicationsByLevel,
+  reviewApplicationByLevel,
+  getVerifiedMembers,
+  getApplicationsForReview
 } = require('../../controllers/UserRegistrationControllers/jainAdharController');
-const { authMiddleware, isAdmin } = require('../../middlewares/authMiddlewares');
+const { authMiddleware, canReviewJainAadhar } = require('../../middlewares/authMiddlewares');
+const { canReviewJainAadharByLocation } = require('../../middlewares/sanghPermissions');
 const upload = require('../../middlewares/uploadMiddleware');
 const rateLimit = require('express-rate-limit');
 const { body, param, query } = require('express-validator');
 
 // Rate limiting for application submission
-const applicationLimiter = rateLimit({
-  windowMs: 24 * 60 * 60 * 1000, // 24 hours
-  max: 3, // limit each IP to 1 application per day
-  message: {
-    success: false,
-    message: 'Too many applications. Please try again tomorrow.'
-  },
-  standardHeaders: true,
-  keyGenerator: (req) => req.user ? req.user.id : req.ip // Use user ID if available
-});
+// const applicationLimiter = rateLimit({
+//   windowMs: 24 * 60 * 60 * 1000, // 24 hours
+//   max: 3, // limit each IP to 1 application per day
+//   message: {
+//     success: false,
+//     message: 'Too many applications. Please try again tomorrow.'
+//   },
+//   standardHeaders: true,
+//   keyGenerator: (req) => req.user ? req.user.id : req.ip // Use user ID if available
+// });
 
 // Rate limiting for status checks
 const statusCheckLimiter = rateLimit({
@@ -42,7 +47,7 @@ router.use(authMiddleware);
 // User routes
 router.post(
   '/apply',
-  applicationLimiter,
+  // applicationLimiter,
   upload.jainAadharDocs,
   [
     body('name').notEmpty().withMessage('Name is required'),
@@ -61,8 +66,8 @@ router.get(
   getApplicationStatus
 );
 
-// Admin routes (require admin privileges)
-router.use(isAdmin);
+// Admin/Superadmin routes (require review permissions)
+router.use(canReviewJainAadhar);
 
 // Admin application management
 router.get(
@@ -75,6 +80,13 @@ router.get(
     query('sortOrder').optional().isIn(['asc', 'desc']).withMessage('Invalid sort order')
   ],
   getAllApplications
+);
+
+// Get applications for review based on reviewer's authority level
+router.get(
+    '/applications/for-review',
+    canReviewJainAadhar,
+    getApplicationsForReview
 );
 
 router.get(
@@ -108,6 +120,38 @@ router.post(
     body('comment').notEmpty().withMessage('Comment is required')
   ],
   addReviewComment
+);
+
+// Review application - for all authorized reviewers (superadmin, admin, district/city presidents)
+router.put(
+    '/applications/:applicationId/review',
+    [
+        param('applicationId').isMongoId().withMessage('Invalid application ID'),
+        body('status').isIn(['approved', 'rejected']).withMessage('Invalid status'),
+        body('remarks').optional().isString().withMessage('Remarks must be a string')
+    ],
+    reviewApplication
+);
+
+// Get applications by specific level - for backward compatibility
+router.get(
+    '/applications/level/:level',
+    [
+        param('level').isIn(['superadmin', 'country', 'state', 'district', 'city']).withMessage('Invalid level')
+    ],
+    getApplicationsByLevel
+);
+
+// Get verified members for Sangh
+router.get(
+    '/verified-members',
+    [
+        query('level').isIn(['city', 'district', 'state', 'country']).withMessage('Invalid level'),
+        query('city').optional().isString(),
+        query('district').optional().isString(),
+        query('state').optional().isString()
+    ],
+    getVerifiedMembers
 );
 
 module.exports = router;

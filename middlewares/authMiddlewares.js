@@ -95,13 +95,53 @@ const authMiddleware = asyncHandler(async (req, res, next) => {
 // Admin middleware
 const isAdmin = asyncHandler(async (req, res, next) => {
     const user = req.user;
-    if (user.role !== 'admin') {
+    if (user.role !== 'admin' && user.role !== 'superadmin') {
         return res.status(403).json({
             success: false,
             message: 'Access denied. Admin privileges required.'
         });
     }
     next();
+});
+
+// Superadmin middleware
+const isSuperAdmin = asyncHandler(async (req, res, next) => {
+    const user = req.user;
+    if (user.role !== 'superadmin') {
+        return res.status(403).json({
+            success: false,
+            message: 'Access denied. Superadmin privileges required.'
+        });
+    }
+    next();
+});
+
+// Check if user has Jain Aadhar review permissions
+const canReviewJainAadhar = asyncHandler(async (req, res, next) => {
+    const user = req.user;
+    
+    // Check for superadmin or admin with verify permissions
+    if (user.role === 'superadmin' || (user.role === 'admin' && user.adminPermissions.includes('verify_jain_aadhar'))) {
+        req.reviewerLevel = user.role === 'superadmin' ? 'superadmin' : 'admin';
+        return next();
+    }
+    
+    // Check for any president roles (country, state, district, or city)
+    const presidentRole = user.sanghRoles?.find(role => 
+        role.role === 'president' && ['country', 'state', 'district', 'city'].includes(role.level)
+    );
+    
+    if (presidentRole) {
+        // Set reviewer level and sanghId for use in controllers
+        req.reviewerLevel = presidentRole.level;
+        req.reviewerSanghId = presidentRole.sanghId;
+        return next();
+    }
+    
+    return res.status(403).json({
+        success: false,
+        message: 'Access denied. Jain Aadhar review privileges required.'
+    });
 });
 
 // Check trial period or Jain Aadhar verification
@@ -141,5 +181,7 @@ module.exports = {
     authMiddleware,
     authenticate,
     isAdmin,
+    isSuperAdmin,
+    canReviewJainAadhar,
     checkAccess
 };
