@@ -8,10 +8,11 @@ const hasLevelAccess = (userLevel, targetLevel, isSuperAdmin = false) => {
     if (isSuperAdmin) return true;
 
     const levelHierarchy = {
-        'country': ['country', 'state', 'district', 'city'],
-        'state': ['state', 'district', 'city'],
-        'district': ['district', 'city'],
-        'city': ['city']
+        'country': ['country', 'state', 'district', 'city', 'area'],
+        'state': ['state', 'district', 'city', 'area'],
+        'district': ['district', 'city', 'area'],
+        'city': ['city', 'area'],
+        'area': ['area']
     };
     return levelHierarchy[userLevel]?.includes(targetLevel) || false;
 };
@@ -57,7 +58,7 @@ const isPresident = async (req, res, next) => {
             // Higher level access check - Country president gets full access to lower levels
             const presidentSangh = await HierarchicalSangh.findById(role.sanghId);
             if (presidentSangh && role.level === 'country') {
-                if (['state', 'district', 'city'].includes(targetSangh.level)) {
+                if (['state', 'district', 'city', 'area'].includes(targetSangh.level)) {
                     hasAccess = true;
                     break;
                 }
@@ -195,7 +196,15 @@ const canReviewJainAadharByLocation = async (req, res, next) => {
                 if (!sangh) continue;
                 
                 // Check location match based on level
-                if (role.level === 'city') {
+                if (role.level === 'area') {
+                    if (sangh.location.area === application.location.area &&
+                        sangh.location.city === application.location.city &&
+                        sangh.location.district === application.location.district &&
+                        sangh.location.state === application.location.state) {
+                        hasAuthority = true;
+                        break;
+                    }
+                } else if (role.level === 'city') {
                     if (sangh.location.city === application.location.city &&
                         sangh.location.district === application.location.district &&
                         sangh.location.state === application.location.state) {

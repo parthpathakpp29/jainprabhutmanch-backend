@@ -42,7 +42,7 @@ const sanghRoutes = require('./routes/SanghRoutes/sanghRoute');
 // Comment out fee routes
 // const feeRoutes = require('./routes/SanghRoutes/feeRoutes');
 const panchayatRoutes = require('./routes/SanghRoutes/panchRoutes');
-
+const locationRoutes = require('./routes/locationRoutes');
 
 dbConnect();
 
@@ -90,6 +90,7 @@ app.use('/api/yojana', [authMiddleware, isAdmin], govtYojanaRoutes);
 
 app.use('/api/hierarchical-sangh', authMiddleware, hierarchicalSanghRoutes);
 app.use('/api/sangh-access', authMiddleware, sanghAccessRoutes);
+app.use('/api/locations', locationRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

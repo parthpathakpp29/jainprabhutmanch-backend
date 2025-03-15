@@ -1,7 +1,6 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 
-
 const officeBearerSchema = new mongoose.Schema({
     role: {
         type: String,
@@ -92,14 +91,39 @@ const hierarchicalSanghSchema = new mongoose.Schema({
     },
     level: {
         type: String,
-        enum: ['country', 'state', 'district', 'city'],
+        enum: ['country', 'state', 'district', 'city', 'area'],
         required: true
     },
     location: {
-        country: String,
-        state: String,
-        district: String,
-        city: String
+        country: {
+            type: String,
+            required: true,
+            default: 'India'
+        },
+        state: {
+            type: String,
+            required: function() {
+                return ['state', 'district', 'city', 'area'].includes(this.level);
+            }
+        },
+        district: {
+            type: String,
+            required: function() {
+                return ['district', 'city', 'area'].includes(this.level);
+            }
+        },
+        city: {
+            type: String,
+            required: function() {
+                return ['city', 'area'].includes(this.level);
+            }
+        },
+        area: {
+            type: String,
+            required: function() {
+                return this.level === 'area';
+            }
+        }
     },
     parentSangh: {
         type: mongoose.Schema.Types.ObjectId,
@@ -149,7 +173,8 @@ hierarchicalSanghSchema.pre('save', async function(next) {
             country: 'CNT',
             state: 'ST',
             district: 'DST',
-            city: 'CTY'
+            city: 'CTY',
+            area: 'AREA'
         }[this.level] || 'SNG';
         
         const timestamp = Date.now().toString().slice(-6);
@@ -182,7 +207,7 @@ hierarchicalSanghSchema.methods.validateHierarchy = async function() {
         throw new Error('Parent Sangh not found');
     }
 
-    const hierarchyOrder = ['country', 'state', 'district', 'city'];
+    const hierarchyOrder = ['country', 'state', 'district', 'city', 'area'];
     const parentIndex = hierarchyOrder.indexOf(parentSangh.level);
     const currentIndex = hierarchyOrder.indexOf(this.level);
 
@@ -224,6 +249,5 @@ hierarchicalSanghSchema.index({ parentSangh: 1 }); // status index is already co
 hierarchicalSanghSchema.index({ createdAt: -1 });
 // Use a sparse index for sanghAccessId to allow multiple null values
 hierarchicalSanghSchema.index({ sanghAccessId: 1 }, { sparse: true });
-
 
 module.exports = mongoose.model('HierarchicalSangh', hierarchicalSanghSchema); 

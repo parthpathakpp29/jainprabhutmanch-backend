@@ -11,9 +11,11 @@ const {
   getApplicationsByLevel,
   reviewApplicationByLevel,
   getVerifiedMembers,
-  getApplicationsForReview
+  getApplicationsForReview,
+  editJainAadhar
 } = require('../../controllers/UserRegistrationControllers/jainAdharController');
 const { authMiddleware, canReviewJainAadhar } = require('../../middlewares/authMiddlewares');
+const { canEditJainAadhar } = require('../../middlewares/jainAadharEditPermissions');
 const { canReviewJainAadharByLocation } = require('../../middlewares/sanghPermissions');
 const upload = require('../../middlewares/uploadMiddleware');
 const rateLimit = require('express-rate-limit');
@@ -152,6 +154,18 @@ router.get(
         query('state').optional().isString()
     ],
     getVerifiedMembers
+);
+
+// Edit Jain Aadhar application - for authorized reviewers
+router.put(
+    '/applications/:id/edit',
+    [
+        param('id').isMongoId().withMessage('Invalid application ID'),
+        body('editRemarks').optional().isString().withMessage('Edit remarks must be a string')
+    ],
+    authMiddleware,
+    canEditJainAadhar,
+    editJainAadhar
 );
 
 module.exports = router;

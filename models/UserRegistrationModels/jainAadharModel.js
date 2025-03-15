@@ -99,7 +99,7 @@ const jainAadharSchema = new mongoose.Schema(
     // New fields for level-specific review
     applicationLevel: {
       type: String,
-      enum: ['superadmin', 'country', 'state', 'district', 'city'],
+      enum: ['superadmin', 'country', 'state', 'district', 'city', 'area'],
       required: true
     },
     reviewingSanghId: {
@@ -129,7 +129,7 @@ const jainAadharSchema = new mongoose.Schema(
       },
       level: {
         type: String,
-        enum: ['superadmin', 'country', 'state', 'district', 'city', 'user']
+        enum: ['superadmin', 'country', 'state', 'district', 'city', 'area', 'user']
       },
       sanghId: {
         type: mongoose.Schema.Types.ObjectId,
@@ -149,7 +149,8 @@ const jainAadharSchema = new mongoose.Schema(
       },
       state: String,
       district: String,
-      city: String
+      city: String,
+      area: String
     }
   },
   { timestamps: true }

@@ -15,6 +15,15 @@ const checkExistingApplication = asyncHandler(async (req, res, next) => {
   next();
 });
 
+// Determine application level based on location
+const determineApplicationLevel = (location) => {
+    if (location.area) return 'area';
+    if (location.city) return 'city';
+    if (location.district) return 'district';
+    if (location.state) return 'state';
+    return 'superadmin';
+};
+
 // Create Jain Aadhar application with level-based routing
 const createJainAadhar = asyncHandler(async (req, res) => {
     try {
@@ -93,8 +102,20 @@ const createJainAadhar = asyncHandler(async (req, res) => {
                             reviewingSanghId = stateSangh._id;
                             applicationLevel = 'state';
                         } else {
-                            // Default to superadmin if no matching sangh found
-                            applicationLevel = 'superadmin';
+                            // Try country level before superadmin
+                            const countrySangh = await HierarchicalSangh.findOne({
+                                level: 'country',
+                                status: 'active',
+                                'location.country': 'India'  // Since we're only operating in India
+                            });
+                            
+                            if (countrySangh) {
+                                reviewingSanghId = countrySangh._id;
+                                applicationLevel = 'country';
+                            } else {
+                                // Only go to superadmin if no country sangh exists
+                                applicationLevel = 'superadmin';
+                            }
                         }
                     }
                 } else if (applicationLevel === 'district') {
@@ -109,12 +130,34 @@ const createJainAadhar = asyncHandler(async (req, res) => {
                         reviewingSanghId = stateSangh._id;
                         applicationLevel = 'state';
                     } else {
-                        // Default to superadmin if no matching sangh found
+                        // Try country level before superadmin
+                        const countrySangh = await HierarchicalSangh.findOne({
+                            level: 'country',
+                            status: 'active',
+                            'location.country': 'India'
+                        });
+                        
+                        if (countrySangh) {
+                            reviewingSanghId = countrySangh._id;
+                            applicationLevel = 'country';
+                        } else {
+                            applicationLevel = 'superadmin';
+                        }
+                    }
+                } else if (applicationLevel === 'state') {
+                    // Try country level before superadmin
+                    const countrySangh = await HierarchicalSangh.findOne({
+                        level: 'country',
+                        status: 'active',
+                        'location.country': 'India'
+                    });
+                    
+                    if (countrySangh) {
+                        reviewingSanghId = countrySangh._id;
+                        applicationLevel = 'country';
+                    } else {
                         applicationLevel = 'superadmin';
                     }
-                } else {
-                    // Default to superadmin if no matching sangh found
-                    applicationLevel = 'superadmin';
                 }
             } else {
                 reviewingSanghId = reviewingSangh._id;
@@ -132,7 +175,8 @@ const createJainAadhar = asyncHandler(async (req, res) => {
                 country: 'India',
                 state: location.state,
                 district: location.district || '',
-                city: location.city || ''
+                city: location.city || '',
+                area: location.area || null
             },
             reviewHistory: [{
                 action: 'submitted',
@@ -250,8 +294,8 @@ const getApplicationsForReview = asyncHandler(async (req, res) => {
             return successResponse(res, applications, 'Applications retrieved successfully');
         }
 
-        // For state, district or city presidents
-        if (['state', 'district', 'city'].includes(reviewerLevel)) {
+        // For state, district, city, or area presidents
+        if (['state', 'district', 'city', 'area'].includes(reviewerLevel)) {
             const sangh = await HierarchicalSangh.findById(reviewerSanghId);
             if (!sangh) {
                 return errorResponse(res, 'Sangh not found', 404);
@@ -263,7 +307,12 @@ const getApplicationsForReview = asyncHandler(async (req, res) => {
                 applicationLevel: reviewerLevel 
             };
             
-            if (reviewerLevel === 'city') {
+            if (reviewerLevel === 'area') {
+                locationQuery['location.area'] = sangh.location.area;
+                locationQuery['location.city'] = sangh.location.city;
+                locationQuery['location.district'] = sangh.location.district;
+                locationQuery['location.state'] = sangh.location.state;
+            } else if (reviewerLevel === 'city') {
                 locationQuery['location.city'] = sangh.location.city;
                 locationQuery['location.district'] = sangh.location.district;
                 locationQuery['location.state'] = sangh.location.state;
@@ -278,7 +327,7 @@ const getApplicationsForReview = asyncHandler(async (req, res) => {
                 .populate('userId')
                 .populate('reviewingSanghId', 'name level location')
                 .sort('-createdAt');
-
+            
             return successResponse(res, applications, 'Applications retrieved successfully');
         }
 
@@ -402,11 +451,14 @@ const reviewApplication = asyncHandler(async (req, res) => {
       const jainAadharNumber = await generateJainAadharNumber();
             application.jainAadharNumber = jainAadharNumber;
 
-            // Update user status
+            // Update user's status
       await User.findByIdAndUpdate(application.userId, {
         jainAadharStatus: 'verified',
-                jainAadharNumber,
-                // Add location information to user profile for easier filtering
+        jainAadharNumber
+      });
+
+            // Add location information to user profile for easier filtering
+            await User.findByIdAndUpdate(application.userId, {
                 city: application.location.city,
                 district: application.location.district,
                 state: application.location.state
@@ -428,6 +480,11 @@ const reviewApplication = asyncHandler(async (req, res) => {
 // Helper function to verify location authority
 const verifyLocationAuthority = (sangh, application) => {
     switch (application.applicationLevel) {
+        case 'area':
+            return sangh.location.area === application.location.area &&
+                   sangh.location.city === application.location.city &&
+                   sangh.location.district === application.location.district &&
+                   sangh.location.state === application.location.state;
         case 'city':
             return sangh.location.city === application.location.city &&
                    sangh.location.district === application.location.district &&
@@ -647,16 +704,80 @@ const getVerifiedMembers = asyncHandler(async (req, res) => {
   }
 });
 
+// Edit Jain Aadhar application details
+const editJainAadhar = asyncHandler(async (req, res) => {
+    try {
+        const applicationId = req.params.id;
+        const editableFields = [
+            'name', 'pitaOrpatiName', 'phoneNumber', 'whatsappNumber',
+            'bloodGroup', 'marriageStatus', 'husbandWifeName', 'marriageDate',
+            'countSons', 'sonNames', 'countDaughters', 'daughterNames',
+            'panth', 'gotra', 'sansthan', 'sansthanPosition',
+            'pitaKaNaam', 'pitaKaMulNiwas', 'mataKaNaam', 'mataKaMulNiwas',
+            'dadaKaNaam', 'dadaKaMulNiwas', 'parDadaKaNaam', 'parDadaKaMulNiwas',
+            'brother', 'sister', 'education', 'job', 'jobAddress', 'JobPosition',
+            'jobAnnualIncom', 'business', 'businessType', 'businessAddress',
+            'businessAnnualIncom', 'student', 'degree', 'schoolName',
+            'houseWife', 'retired', 'contactDetails'
+        ];
+
+        // Critical fields that can't be edited
+        const restrictedFields = ['userId', 'status', 'applicationLevel', 'reviewingSanghId', 
+            'mulJain', 'subCaste', 'location', 'PanCard', 'AadharCard'];
+
+        const application = await JainAadhar.findById(applicationId);
+        if (!application) {
+            return errorResponse(res, 'Application not found', 404);
+        }
+
+        // Remove restricted fields from request
+        restrictedFields.forEach(field => delete req.body[field]);
+
+        // Filter out non-editable fields
+        const updates = {};
+        editableFields.forEach(field => {
+            if (req.body[field] !== undefined) {
+                updates[field] = req.body[field];
+            }
+        });
+
+        // Add edit to review history
+        const editHistory = {
+            action: 'edited',
+            by: req.user._id,
+            level: req.editingLevel,
+            sanghId: req.editingSanghId,
+            remarks: req.body.editRemarks || 'Application details edited',
+            timestamp: new Date()
+        };
+
+        // Update application with new details and add to history
+        const updatedApplication = await JainAadhar.findByIdAndUpdate(
+            applicationId,
+            {
+                $set: updates,
+                $push: { reviewHistory: editHistory }
+            },
+            { new: true }
+        );
+
+        return successResponse(res, updatedApplication, 'Application updated successfully');
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
+    }
+});
+
 module.exports = {
-  createJainAadhar,
-  getApplicationStatus,
-  getAllApplications,
-  getApplicationsForReview,
-  reviewApplication,
-  getApplicationStats,
-  getApplicationDetails,
-  addReviewComment,
-  getApplicationsByLevel,
-  reviewApplicationByLevel,
-  getVerifiedMembers
+    createJainAadhar,
+    getApplicationStatus,
+    getAllApplications,
+    reviewApplication,
+    getApplicationStats,
+    getApplicationDetails,
+    addReviewComment,
+    getApplicationsByLevel,
+    reviewApplicationByLevel,
+    getVerifiedMembers,
+    getApplicationsForReview,
+    editJainAadhar
 };

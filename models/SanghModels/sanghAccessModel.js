@@ -12,14 +12,15 @@ const sanghAccessSchema = new mongoose.Schema({
     },
     level: {
         type: String,
-        enum: ['country', 'state', 'district', 'city'],
+        enum: ['country', 'state', 'district', 'city', 'area'],
         required: true
     },
     location: {
         country: String,
         state: String,
         district: String,
-        city: String
+        city: String,
+        area: String
     },
     parentSanghAccess: {
         type: mongoose.Schema.Types.ObjectId,
@@ -50,7 +51,8 @@ sanghAccessSchema.pre('save', async function(next) {
             country: 'CNT',
             state: 'ST',
             district: 'DST',
-            city: 'CTY'
+            city: 'CTY',
+            area: 'AREA'
         }[this.level];
 
         const timestamp = Date.now().toString().slice(-6);
@@ -64,6 +66,7 @@ sanghAccessSchema.pre('save', async function(next) {
 // Validate location based on level
 sanghAccessSchema.pre('save', function(next) {
     const requiredFields = {
+        area: ['country', 'state', 'district', 'city', 'area'],
         city: ['country', 'state', 'district', 'city'],
         district: ['country', 'state', 'district'],
         state: ['country', 'state'],
@@ -93,7 +96,7 @@ sanghAccessSchema.methods.validateHierarchy = async function() {
             throw new Error('Parent Sangh access not found');
         }
 
-        const hierarchyOrder = ['country', 'state', 'district', 'city'];
+        const hierarchyOrder = ['country', 'state', 'district', 'city', 'area'];
         const parentIndex = hierarchyOrder.indexOf(parent.level);
         const currentIndex = hierarchyOrder.indexOf(this.level);
 
@@ -116,6 +119,11 @@ sanghAccessSchema.methods.validateHierarchy = async function() {
             case 'city':
                 if (this.location.district !== parent.location.district) {
                     throw new Error('City must belong to parent district');
+                }
+                break;
+            case 'area':
+                if (this.location.city !== parent.location.city) {
+                    throw new Error('Area must belong to parent city');
                 }
                 break;
         }
