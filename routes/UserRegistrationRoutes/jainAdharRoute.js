@@ -12,7 +12,8 @@ const {
   reviewApplicationByLevel,
   getVerifiedMembers,
   getApplicationsForReview,
-  editJainAadhar
+  editJainAadhar,
+  checkExistingApplication
 } = require('../../controllers/UserRegistrationControllers/jainAdharController');
 const { authMiddleware, canReviewJainAadhar } = require('../../middlewares/authMiddlewares');
 const { canEditJainAadhar } = require('../../middlewares/jainAadharEditPermissions');
@@ -59,6 +60,7 @@ router.post(
     body('mulJain').isIn(['Digamber', 'Shwetamber']).withMessage('Invalid mulJain value'),
     body('subCaste').isIn(['Parwar', 'Khandelwal', 'Porwal', 'Golalare', 'Golapurab']).withMessage('Invalid subCaste value')
   ],
+  checkExistingApplication,
   createJainAadhar
 );
 

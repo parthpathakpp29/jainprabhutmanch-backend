@@ -779,5 +779,6 @@ module.exports = {
     reviewApplicationByLevel,
     getVerifiedMembers,
     getApplicationsForReview,
-    editJainAadhar
+    editJainAadhar,
+    checkExistingApplication
 };

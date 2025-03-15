@@ -121,7 +121,7 @@ const jainAadharSchema = new mongoose.Schema(
     reviewHistory: [{
       action: {
         type: String,
-        enum: ['submitted', 'reviewed', 'approved', 'rejected']
+        enum: ['submitted', 'reviewed', 'approved', 'rejected', 'edited', 'reapplied']
       },
       by: {
         type: mongoose.Schema.Types.ObjectId,
