@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 
 // Create a schema for individual Panch member details
 const panchMemberSchema = new mongoose.Schema({
@@ -13,6 +14,27 @@ const panchMemberSchema = new mongoose.Schema({
             required: [true, 'Surname is required'],
             trim: true
         },
+        dateOfBirth: {
+            type: Date,
+            required: [true, 'Date of birth is required'],
+            validate: {
+                validator: function(dob) {
+                    // Calculate age
+                    const today = new Date();
+                    const birthDate = new Date(dob);
+                    let age = today.getFullYear() - birthDate.getFullYear();
+                    const monthDiff = today.getMonth() - birthDate.getMonth();
+                    
+                    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+                        age--;
+                    }
+                    
+                    // Validate age is at least 50
+                    return age >= 50;
+                },
+                message: 'Panch members must be at least 50 years old'
+            }
+        },
         mobileNumber: {
             type: String,
             required: [true, 'Mobile number is required'],
@@ -22,6 +44,11 @@ const panchMemberSchema = new mongoose.Schema({
                 },
                 message: 'Please enter a valid 10-digit mobile number'
             }
+        },
+        educationQualification: {
+            type: String,
+            required: [true, 'Education qualification is required'],
+            trim: true
         },
         jainAadharNumber: {
             type: String,
@@ -43,6 +70,12 @@ const panchMemberSchema = new mongoose.Schema({
             required: [true, 'Profile photo is required']
         }
     },
+    accessKey: {
+        type: String,
+        default: function() {
+            return crypto.randomBytes(8).toString('hex').toUpperCase();
+        }
+    },
     status: {
         type: String,
         enum: ['active', 'inactive'],
@@ -53,7 +86,7 @@ const panchMemberSchema = new mongoose.Schema({
 const panchSchema = new mongoose.Schema({
     sanghId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Sangh',
+        ref: 'HierarchicalSangh',
         required: [true, 'Sangh ID is required'],
         unique: true // Only one active Panch group per Sangh
     },
@@ -64,6 +97,13 @@ const panchSchema = new mongoose.Schema({
                 return members.filter(m => m.status === 'active').length === 5;
             },
             message: 'Panch must have exactly 5 active members'
+        }
+    },
+    accessId: {
+        type: String,
+        unique: true,
+        default: function() {
+            return 'PANCH-' + crypto.randomBytes(6).toString('hex').toUpperCase();
         }
     },
     term: {
@@ -88,5 +128,7 @@ const panchSchema = new mongoose.Schema({
 // Add indexes
 panchSchema.index({ sanghId: 1, status: 1 });
 panchSchema.index({ 'members.personalDetails.jainAadharNumber': 1 });
+panchSchema.index({ accessId: 1 }, { unique: true });
+panchSchema.index({ 'members.accessKey': 1 });
 
 module.exports = mongoose.model('Panch', panchSchema); 

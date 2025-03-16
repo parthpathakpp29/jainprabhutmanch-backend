@@ -37,6 +37,8 @@ const { initializeWebSocket, getIo } = require('./websocket/socket');
 const { scheduleStoryCleanup } = require('./jobs/storyCleanupJob');
 const hierarchicalSanghRoutes = require('./routes/SanghRoutes/hierarchicalSanghRoute');
 const sanghAccessRoutes = require('./routes/SanghRoutes/sanghAccessRoute');
+const sanghPostRoutes = require('./routes/SanghRoutes/sanghPostRoutes');
+const panchPostRoutes = require('./routes/SanghRoutes/panchPostRoutes');
 
 const sanghRoutes = require('./routes/SanghRoutes/sanghRoute');
 // Comment out fee routes
@@ -90,6 +92,9 @@ app.use('/api/yojana', [authMiddleware, isAdmin], govtYojanaRoutes);
 
 app.use('/api/hierarchical-sangh', authMiddleware, hierarchicalSanghRoutes);
 app.use('/api/sangh-access', authMiddleware, sanghAccessRoutes);
+app.use('/api/sangh-posts', authMiddleware, sanghPostRoutes);
+app.use('/api/panch', authMiddleware, panchayatRoutes);
+app.use('/api/panch-posts', authMiddleware, panchPostRoutes);
 app.use('/api/locations', locationRoutes);
 
 // Health check route

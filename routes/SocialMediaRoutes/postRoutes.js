@@ -12,7 +12,8 @@ const {
   getReplies,
   hidePost,
   unhidePost,
-  deleteMediaItem
+  deleteMediaItem,
+  getCombinedFeed
 } = require('../../controllers/SocialMediaControllers/postController');
 const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const { check, param } = require('express-validator');
@@ -48,6 +49,9 @@ router.post('/create',
 );
 
 router.get('/', getAllPosts);
+
+// Get combined feed of user posts and Sangh posts
+router.get('/combined-feed', getCombinedFeed);
 
 router.get('/:postId', [
   param('postId').isMongoId().withMessage('Invalid post ID')

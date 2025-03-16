@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware, isSuperAdmin } = require('../../middlewares/authMiddlewares');
 const { validateSanghAccess, canCreateLowerLevelSangh, validateLocationHierarchy } = require('../../middlewares/sanghAuthMiddleware');
-const { isOfficeBearer } = require('../../middlewares/sanghPermissions');
+const { isOfficeBearer, canManageAreaSangh } = require('../../middlewares/sanghPermissions');
 const {
     createHierarchicalSangh,
     getHierarchy,
@@ -171,6 +171,25 @@ router.put('/:sanghId/members/:memberId',
 router.get('/:sanghId/members', 
     validateSanghAccess,
     getSanghMembers
+);
+
+// Area-specific routes
+router.put('/area/:sanghId', 
+    authMiddleware,
+    canManageAreaSangh,
+    updateHierarchicalSangh
+);
+
+router.post('/area/:sanghId/members',
+    authMiddleware,
+    canManageAreaSangh,
+    addSanghMember
+);
+
+router.delete('/area/:sanghId/members/:memberId',
+    authMiddleware,
+    canManageAreaSangh,
+    removeSanghMember
 );
 
 module.exports = router; 

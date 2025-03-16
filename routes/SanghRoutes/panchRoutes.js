@@ -7,14 +7,26 @@ const {
     getPanchMembers,
     updatePanchStatus,
     editPanchMember,
-    deletePanchGroup
+    deletePanchGroup,
+    validatePanchAccess
 } = require('../../controllers/SanghControllers/panchController');
-const { authenticate } = require('../../middlewares/authMiddlewares');
+const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const { isPresident } = require('../../middlewares/sanghPermissions');
 const { panchGroupDocs } = require('../../middlewares/uploadMiddleware');
+const { body } = require('express-validator');
 
 // Protect all routes
-router.use(authenticate);
+router.use(authMiddleware);
+
+// Validate Panch Access
+router.post('/validate-access',
+    [
+        body('panchId').isMongoId().withMessage('Invalid Panch ID'),
+        body('jainAadharNumber').notEmpty().withMessage('Jain Aadhar number is required'),
+        body('accessKey').notEmpty().withMessage('Access key is required')
+    ],
+    validatePanchAccess
+);
 
 // Validate Sangh ID
 // router.get('/validate/:sanghId', validateSangh);

@@ -15,15 +15,6 @@ const checkExistingApplication = asyncHandler(async (req, res, next) => {
   next();
 });
 
-// Determine application level based on location
-const determineApplicationLevel = (location) => {
-    if (location.area) return 'area';
-    if (location.city) return 'city';
-    if (location.district) return 'district';
-    if (location.state) return 'state';
-    return 'superadmin';
-};
-
 // Create Jain Aadhar application with level-based routing
 const createJainAadhar = asyncHandler(async (req, res) => {
     try {
@@ -36,8 +27,12 @@ const createJainAadhar = asyncHandler(async (req, res) => {
         }
 
         // Determine application level based on location
+        // Check for area first - if area is provided, route to area level
+        if (location.area && location.city && location.district) {
+            applicationLevel = 'area';
+        }
         // Default to city level if city is provided
-        if (location.city && location.district) {
+        else if (location.city && location.district) {
             applicationLevel = 'city';
         } 
         // If no city but district is provided, route to district level
@@ -49,8 +44,21 @@ const createJainAadhar = asyncHandler(async (req, res) => {
             applicationLevel = 'state';
         }
 
+        // Special case: For country level applications, route to country president
+        if (req.body.applicationLevel === 'country') {
+            applicationLevel = 'country';
+            // Find the country level Sangh
+            const countrySangh = await HierarchicalSangh.findOne({
+                level: 'country',
+                status: 'active',
+                'location.country': 'India'
+            });
+            if (countrySangh) {
+                reviewingSanghId = countrySangh._id;
+            }
+        }
         // Special case: For country level office bearers, route to superadmin
-        if (req.body.isOfficeBearer && applicationLevel === 'country') {
+        else if (req.body.isOfficeBearer && applicationLevel === 'country') {
             applicationLevel = 'superadmin';
         }
 
@@ -63,7 +71,12 @@ const createJainAadhar = asyncHandler(async (req, res) => {
             };
             
             // Add location filters based on application level
-            if (applicationLevel === 'city') {
+            if (applicationLevel === 'area') {
+                query['location.area'] = location.area;
+                query['location.city'] = location.city;
+                query['location.district'] = location.district;
+                query['location.state'] = location.state;
+            } else if (applicationLevel === 'city') {
                 query['location.city'] = location.city;
                 query['location.district'] = location.district;
                 query['location.state'] = location.state;
@@ -78,7 +91,61 @@ const createJainAadhar = asyncHandler(async (req, res) => {
             
             // If no matching sangh found at the current level, try to escalate to next level
             if (!reviewingSangh) {
-                if (applicationLevel === 'city') {
+                if (applicationLevel === 'area') {
+                    // Try city level
+                    const citySangh = await HierarchicalSangh.findOne({
+                        level: 'city',
+                        status: 'active',
+                        'location.city': location.city,
+                        'location.district': location.district,
+                        'location.state': location.state
+                    });
+                    
+                    if (citySangh) {
+                        reviewingSanghId = citySangh._id;
+                        applicationLevel = 'city';
+                    } else {
+                        // Try district level
+                        const districtSangh = await HierarchicalSangh.findOne({
+                            level: 'district',
+                            status: 'active',
+                            'location.district': location.district,
+                            'location.state': location.state
+                        });
+                        
+                        if (districtSangh) {
+                            reviewingSanghId = districtSangh._id;
+                            applicationLevel = 'district';
+                        } else {
+                            // Try state level
+                            const stateSangh = await HierarchicalSangh.findOne({
+                                level: 'state',
+                                status: 'active',
+                                'location.state': location.state
+                            });
+                            
+                            if (stateSangh) {
+                                reviewingSanghId = stateSangh._id;
+                                applicationLevel = 'state';
+                            } else {
+                                // Try country level before superadmin
+                                const countrySangh = await HierarchicalSangh.findOne({
+                                    level: 'country',
+                                    status: 'active',
+                                    'location.country': 'India'  // Since we're only operating in India
+                                });
+                                
+                                if (countrySangh) {
+                                    reviewingSanghId = countrySangh._id;
+                                    applicationLevel = 'country';
+                                } else {
+                                    // Only go to superadmin if no country sangh exists
+                                    applicationLevel = 'superadmin';
+                                }
+                            }
+                        }
+                    }
+                } else if (applicationLevel === 'city') {
                     // Try district level
                     const districtSangh = await HierarchicalSangh.findOne({
                         level: 'district',
@@ -106,14 +173,13 @@ const createJainAadhar = asyncHandler(async (req, res) => {
                             const countrySangh = await HierarchicalSangh.findOne({
                                 level: 'country',
                                 status: 'active',
-                                'location.country': 'India'  // Since we're only operating in India
+                                'location.country': 'India'
                             });
                             
                             if (countrySangh) {
                                 reviewingSanghId = countrySangh._id;
                                 applicationLevel = 'country';
                             } else {
-                                // Only go to superadmin if no country sangh exists
                                 applicationLevel = 'superadmin';
                             }
                         }
@@ -346,20 +412,8 @@ const reviewApplication = asyncHandler(async (req, res) => {
         const userId = req.user._id;
         const reviewerLevel = req.reviewerLevel;
         const reviewerSanghId = req.reviewerSanghId;
-
-        console.log('Review Application Debug:');
-        console.log('Application ID:', appId);
-        console.log('Request params:', req.params);
-        console.log('Reviewer Level:', reviewerLevel);
-        console.log('User ID:', userId);
-        
-        // Try to find application directly by string ID to check if it exists
-        const allApplications = await JainAadhar.find({});
-        console.log('Total applications in DB:', allApplications.length);
-        console.log('Application IDs in DB:', allApplications.map(app => app._id.toString()));
         
         const application = await JainAadhar.findById(appId);
-        console.log('Application found:', application ? 'Yes' : 'No');
         
     if (!application) {
       return errorResponse(res, 'Application not found', 404);
@@ -384,7 +438,7 @@ const reviewApplication = asyncHandler(async (req, res) => {
         }
         // Country president can review superadmin level applications
         else if (reviewerLevel === 'country') {
-            if (application.applicationLevel === 'superadmin') {
+            if (application.applicationLevel === 'superadmin' || application.applicationLevel === 'country') {
                 hasAuthority = true;
             } else {
                 return errorResponse(res, `This application is not at country level for review`, 403);
@@ -767,6 +821,56 @@ const editJainAadhar = asyncHandler(async (req, res) => {
     }
 });
 
+// Get user's own application details
+const getUserApplication = asyncHandler(async (req, res) => {
+  try {
+    const application = await JainAadhar.findOne({ userId: req.user._id })
+      .populate('reviewingSanghId', 'name level location')
+      .populate('reviewHistory.by', 'firstName lastName fullName')
+      .select('-PanCard -AadharCard'); // Exclude document URLs for security
+
+    if (!application) {
+      return errorResponse(res, 'No Jain Aadhar application found', 404);
+    }
+
+    return successResponse(res, application, 'Application details retrieved successfully');
+  } catch (error) {
+    return errorResponse(res, 'Error fetching application details', 500, error.message);
+  }
+});
+
+const findReviewingSangh = async (applicationLevel, location) => {
+    try {
+        if (applicationLevel === 'area') {
+            const areaSangh = await HierarchicalSangh.findOne({
+                level: 'area',
+                'location.country': location.country,
+                'location.state': location.state,
+                'location.district': location.district,
+                'location.city': location.city,
+                'location.area': location.area,
+                status: 'active'
+            });
+            
+            if (!areaSangh) {
+                throw new Error('No active Sangh found for the specified area');
+            }
+            
+            return areaSangh._id;
+        }
+        // ... existing code for other levels ...
+    } catch (error) {
+        throw new Error(`Error finding reviewing Sangh: ${error.message}`);
+    }
+};
+
+const validateLocationHierarchy = (applicationLevel, location) => {
+    if (applicationLevel === 'area' && (!location.country || !location.state || !location.district || !location.city || !location.area)) {
+        throw new Error('Area level application requires complete location hierarchy');
+    }
+    // ... existing code ...
+};
+
 module.exports = {
     createJainAadhar,
     getApplicationStatus,
@@ -780,5 +884,6 @@ module.exports = {
     getVerifiedMembers,
     getApplicationsForReview,
     editJainAadhar,
-    checkExistingApplication
+    checkExistingApplication,
+    getUserApplication
 };

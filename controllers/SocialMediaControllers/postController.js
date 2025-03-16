@@ -486,6 +486,78 @@ const unhidePost = asyncHandler(async (req, res) => {
   return successResponse(res, post, 'Post unhidden successfully');
 });
 
+// Get combined feed of user posts and Sangh posts
+const getCombinedFeed = asyncHandler(async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    
+    // Get regular user posts
+    const userPosts = await Post.find({ isHidden: false })
+      .populate('user', 'firstName lastName fullName profilePicture')
+      .sort('-createdAt')
+      .skip(skip)
+      .limit(limit);
+    
+    // Get Sangh posts
+    const SanghPost = require('../../models/SanghModels/sanghPostModel');
+    const sanghPosts = await SanghPost.find({ isHidden: false })
+      .populate('sanghId', 'name level location')
+      .populate('postedByUserId', 'firstName lastName fullName profilePicture')
+      .sort('-createdAt')
+      .skip(skip)
+      .limit(limit);
+    
+    // Get Panch posts
+    const PanchPost = require('../../models/SanghModels/panchPostModel');
+    const panchPosts = await PanchPost.find({ isHidden: false })
+      .populate('panchId', 'accessId')
+      .populate('sanghId', 'name level location')
+      .sort('-createdAt')
+      .skip(skip)
+      .limit(limit);
+    
+    // Add post type for frontend differentiation
+    const userPostsWithType = userPosts.map(post => ({
+      ...post.toObject(),
+      postType: 'user'
+    }));
+    
+    const sanghPostsWithType = sanghPosts.map(post => ({
+      ...post.toObject(),
+      postType: 'sangh'
+    }));
+    
+    const panchPostsWithType = panchPosts.map(post => ({
+      ...post.toObject(),
+      postType: 'panch'
+    }));
+    
+    // Combine and sort by creation date
+    const combinedPosts = [...userPostsWithType, ...sanghPostsWithType, ...panchPostsWithType].sort((a, b) => 
+      new Date(b.createdAt) - new Date(a.createdAt)
+    ).slice(0, limit);
+    
+    // Get total counts for pagination
+    const totalUserPosts = await Post.countDocuments({ isHidden: false });
+    const totalSanghPosts = await SanghPost.countDocuments({ isHidden: false });
+    const totalPanchPosts = await PanchPost.countDocuments({ isHidden: false });
+    const totalPosts = totalUserPosts + totalSanghPosts + totalPanchPosts;
+    
+    return successResponse(res, {
+      posts: combinedPosts,
+      pagination: {
+        total: totalPosts,
+        page,
+        pages: Math.ceil(totalPosts / limit)
+      }
+    }, 'Combined feed retrieved successfully');
+  } catch (error) {
+    return errorResponse(res, 'Error retrieving combined feed', 500, error.message);
+  }
+});
+
 module.exports = {
   createPost,
   getAllPosts,
@@ -499,5 +571,6 @@ module.exports = {
   getReplies,
   hidePost,
   unhidePost,
-  deleteMediaItem
+  deleteMediaItem,
+  getCombinedFeed
 };

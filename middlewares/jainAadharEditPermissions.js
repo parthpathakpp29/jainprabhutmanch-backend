@@ -20,12 +20,12 @@ const canEditJainAadhar = asyncHandler(async (req, res, next) => {
         }
 
         // If application is already approved, no edits allowed
-        if (application.status === 'approved') {
-            return res.status(403).json({
-                success: false,
-                message: 'Cannot edit approved applications'
-            });
-        }
+        // if (application.status === 'approved') {
+        //     return res.status(403).json({
+        //         success: false,
+        //         message: 'Cannot edit approved applications'
+        //     });
+        // }
 
         // Superadmin can edit any application
         if (req.user.role === 'superadmin') {

@@ -239,9 +239,147 @@ const canReviewJainAadharByLocation = async (req, res, next) => {
     }
 };
 
+// Check if user can post as Sangh
+const canPostAsSangh = async (req, res, next) => {
+    try {
+        const sanghId = req.params.sanghId;
+        const userId = req.user._id;
+        
+        // If user is superadmin, allow access
+        if (req.user.role === 'superadmin') {
+            // Still need to check if the Sangh exists
+            const sangh = await HierarchicalSangh.findById(sanghId);
+            if (!sangh) {
+                return errorResponse(res, 'Sangh not found', 404);
+            }
+            
+            // Set a default role for superadmin
+            req.officeBearerRole = 'president';
+            return next();
+        }
+        
+        // Check if user is an office bearer
+        const user = await User.findById(userId);
+        if (!user) {
+            return errorResponse(res, 'User not found', 404);
+        }
+        
+        const officeBearerRole = user.sanghRoles.find(role => 
+            role.sanghId.toString() === sanghId && 
+            ['president', 'secretary', 'treasurer'].includes(role.role)
+        );
+        
+        if (!officeBearerRole) {
+            return errorResponse(res, 'Only office bearers can post on behalf of the Sangh', 403);
+        }
+        
+        // Check if the Sangh exists
+        const sangh = await HierarchicalSangh.findById(sanghId);
+        if (!sangh) {
+            return errorResponse(res, 'Sangh not found', 404);
+        }
+        
+        // Add role to request for controller use
+        req.officeBearerRole = officeBearerRole.role;
+        req.sangh = sangh;
+        
+        next();
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
+    }
+};
+
+// Check if user is a Panch member
+const isPanchMember = async (req, res, next) => {
+    try {
+        const { panchId, accessKey } = req.body;
+        
+        // If user is superadmin, allow access
+        if (req.user.role === 'superadmin') {
+            return next();
+        }
+        
+        // Find the Panch group
+        const Panch = require('../models/SanghModels/panchModel');
+        const panchGroup = await Panch.findById(panchId);
+        
+        if (!panchGroup) {
+            return errorResponse(res, 'Panch group not found', 404);
+        }
+        
+        // Check if the access key matches any of the Panch members
+        const member = panchGroup.members.find(m => 
+            m.accessKey === accessKey && 
+            m.status === 'active'
+        );
+        
+        if (!member) {
+            return errorResponse(res, 'Invalid access key or inactive member', 403);
+        }
+        
+        // Add Panch group and member to request for controller use
+        req.panchGroup = panchGroup;
+        req.panchMember = member;
+        req.sanghId = panchGroup.sanghId;
+        
+        next();
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
+    }
+};
+
+const canManageAreaSangh = async (req, res, next) => {
+    try {
+        const { sanghId } = req.params;
+        const sangh = await HierarchicalSangh.findById(sanghId);
+        
+        if (!sangh) {
+            return res.status(404).json({
+                success: false,
+                message: 'Sangh not found'
+            });
+        }
+
+        if (sangh.level !== 'area') {
+            return res.status(403).json({
+                success: false,
+                message: 'This operation is only allowed for area level Sanghs'
+            });
+        }
+
+        // Check if user has permission to manage this area
+        const hasPermission = req.user.sanghRoles.some(role => 
+            (role.level === 'area' && role.sanghId.equals(sanghId)) || // Area level officer
+            (role.level === 'city' && sangh.location.city === role.location.city) || // City level officer
+            (role.level === 'district' && sangh.location.district === role.location.district) || // District level officer
+            (role.level === 'state' && sangh.location.state === role.location.state) || // State level officer
+            (role.level === 'country') || // Country level officer
+            req.user.role === 'superadmin' // Superadmin
+        );
+
+        if (!hasPermission) {
+            return res.status(403).json({
+                success: false,
+                message: 'You do not have permission to manage this area Sangh'
+            });
+        }
+
+        next();
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: 'Error checking area Sangh permissions',
+            error: error.message
+        });
+    }
+};
+
 module.exports = {
     isPresident,
     isOfficeBearer,
     canAccessLevel,
-    canReviewJainAadharByLocation
+    canReviewJainAadharByLocation,
+    canPostAsSangh,
+    isPanchMember,
+    canManageAreaSangh
 };

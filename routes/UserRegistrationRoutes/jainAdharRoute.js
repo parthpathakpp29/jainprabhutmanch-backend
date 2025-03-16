@@ -13,7 +13,8 @@ const {
   getVerifiedMembers,
   getApplicationsForReview,
   editJainAadhar,
-  checkExistingApplication
+  checkExistingApplication,
+  getUserApplication
 } = require('../../controllers/UserRegistrationControllers/jainAdharController');
 const { authMiddleware, canReviewJainAadhar } = require('../../middlewares/authMiddlewares');
 const { canEditJainAadhar } = require('../../middlewares/jainAadharEditPermissions');
@@ -70,6 +71,12 @@ router.get(
   getApplicationStatus
 );
 
+// Get user's own application details
+router.get(
+  '/my-application',
+  getUserApplication
+);
+
 // Admin/Superadmin routes (require review permissions)
 router.use(canReviewJainAadhar);
 
@@ -89,7 +96,6 @@ router.get(
 // Get applications for review based on reviewer's authority level
 router.get(
     '/applications/for-review',
-    canReviewJainAadhar,
     getApplicationsForReview
 );
 
@@ -126,17 +132,6 @@ router.post(
   addReviewComment
 );
 
-// Review application - for all authorized reviewers (superadmin, admin, district/city presidents)
-router.put(
-    '/applications/:applicationId/review',
-    [
-        param('applicationId').isMongoId().withMessage('Invalid application ID'),
-        body('status').isIn(['approved', 'rejected']).withMessage('Invalid status'),
-        body('remarks').optional().isString().withMessage('Remarks must be a string')
-    ],
-    reviewApplication
-);
-
 // Get applications by specific level - for backward compatibility
 router.get(
     '/applications/level/:level',
@@ -165,7 +160,6 @@ router.put(
         param('id').isMongoId().withMessage('Invalid application ID'),
         body('editRemarks').optional().isString().withMessage('Edit remarks must be a string')
     ],
-    authMiddleware,
     canEditJainAadhar,
     editJainAadhar
 );

@@ -57,6 +57,28 @@ const createHierarchicalSangh = asyncHandler(async (req, res) => {
             parentSanghAccessId
         } = req.body;
 
+        // Validate location hierarchy based on level
+        if (level === 'area' && (!location.country || !location.state || !location.district || !location.city || !location.area)) {
+            return errorResponse(res, 'Area level Sangh requires complete location hierarchy (country, state, district, city, area)', 400);
+        }
+
+        // Additional area-specific validation
+        if (level === 'area') {
+            const existingAreaSangh = await HierarchicalSangh.findOne({
+                level: 'area',
+                'location.country': location.country,
+                'location.state': location.state,
+                'location.district': location.district,
+                'location.city': location.city,
+                'location.area': location.area,
+                status: 'active'
+            });
+
+            if (existingAreaSangh) {
+                return errorResponse(res, 'An active Sangh already exists for this area', 400);
+            }
+        }
+
         // Validate required documents
         if (!req.files) {
             return errorResponse(res, 'Office bearer documents are required', 400);

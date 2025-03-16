@@ -85,8 +85,14 @@ const jainAadharSchema = new mongoose.Schema(
       guardiansNumber: { type: String },
       guardiansRelation: { type: String },
       email: { type: String },
-      address: {type: String},
-      pinCode: {type:String}
+      address: {
+        street: { type: String },
+        area: { type: String },
+        city: { type: String },
+        district: { type: String },
+        state: { type: String },
+        pinCode: { type: String }
+      }
     },
     PanCard: { type: String },
     AadharCard: { type: String },

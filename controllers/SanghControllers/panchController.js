@@ -1,6 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const Panch = require('../../models/SanghModels/panchModel');
-const Sangh = require('../../models/SanghModels/sanghModel');
+const HierarchicalSangh = require('../../models/SanghModels/hierarchicalSanghModel');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
@@ -51,7 +51,7 @@ const updatePanchStatus = asyncHandler(async (req, res) => {
             }
 
             // Verify replacement member belongs to Sangh
-            const sangh = await Sangh.findById(panchGroup.sanghId);
+            const sangh = await HierarchicalSangh.findById(panchGroup.sanghId);
             const isSanghMember = sangh.members.some(m => 
                 m.jainAadharNumber === replacementMember.jainAadharNumber
             );
@@ -191,7 +191,7 @@ const createPanchGroup = asyncHandler(async (req, res) => {
         }
 
         // 2. Verify Sangh exists and check hierarchical permissions
-        const sangh = await Sangh.findById(sanghId);
+        const sangh = await HierarchicalSangh.findById(sanghId);
         if (!sangh) {
             return errorResponse(res, 'Sangh not found', 404);
         }
@@ -205,7 +205,7 @@ const createPanchGroup = asyncHandler(async (req, res) => {
             return errorResponse(res, 'Active Panch group already exists for this Sangh', 400);
         }
 
-        // 4. Validate all members belong to Sangh and have unique Jain Aadhar numbers
+        // 4. Validate all members belong to Sangh, have unique Jain Aadhar numbers, and are at least 50 years old
         const jainAadharNumbers = new Set();
         for (const member of parsedMembers) {
             // Check if member belongs to Sangh
@@ -224,11 +224,35 @@ const createPanchGroup = asyncHandler(async (req, res) => {
                 return errorResponse(res, 'Duplicate Jain Aadhar numbers found', 400);
             }
             jainAadharNumbers.add(member.personalDetails.jainAadharNumber);
+            
+            // Validate age (at least 50 years old)
+            if (member.personalDetails.dateOfBirth) {
+                const today = new Date();
+                const birthDate = new Date(member.personalDetails.dateOfBirth);
+                let age = today.getFullYear() - birthDate.getFullYear();
+                const monthDiff = today.getMonth() - birthDate.getMonth();
+                
+                if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+                    age--;
+                }
+                
+                if (age < 50) {
+                    return errorResponse(res, 
+                        `Member with Jain Aadhar ${member.personalDetails.jainAadharNumber} must be at least 50 years old`,
+                        400
+                    );
+                }
+            } else {
+                return errorResponse(res, 'Date of birth is required for all members', 400);
+            }
+            
+            // Validate education qualification
+            if (!member.personalDetails.educationQualification) {
+                return errorResponse(res, 'Education qualification is required for all members', 400);
+            }
         }
 
         // 5. Create member objects with documents
-
-        // Then modify how you create member docs
         const membersWithDocs = parsedMembers.map((member, index) => {
             const jainAadharFile = req.files[`members[${index}].jainAadharPhoto`]?.[0];
             const profileFile = req.files[`members[${index}].profilePhoto`]?.[0];
@@ -258,7 +282,22 @@ const createPanchGroup = asyncHandler(async (req, res) => {
             }
         });
 
-        return successResponse(res, panchGroup, 'Panch group created successfully', 201);
+        // 7. Return the Panch group with access keys for each member
+        const panchWithAccessKeys = {
+            _id: panchGroup._id,
+            accessId: panchGroup.accessId,
+            sanghId: panchGroup.sanghId,
+            members: panchGroup.members.map(member => ({
+                _id: member._id,
+                name: `${member.personalDetails.firstName} ${member.personalDetails.surname}`,
+                jainAadharNumber: member.personalDetails.jainAadharNumber,
+                accessKey: member.accessKey
+            })),
+            term: panchGroup.term,
+            status: panchGroup.status
+        };
+
+        return successResponse(res, panchWithAccessKeys, 'Panch group created successfully', 201);
 
     } catch (error) {
         // Clean up uploaded files if there's an error
@@ -299,11 +338,58 @@ const getPanchGroup = asyncHandler(async (req, res) => {
     }
 });
 
+// Validate Panch access credentials
+const validatePanchAccess = asyncHandler(async (req, res) => {
+    try {
+        const { panchId, jainAadharNumber, accessKey } = req.body;
+
+        // Find the Panch group
+        const panchGroup = await Panch.findById(panchId)
+            .populate('sanghId', 'name level location');
+            
+        if (!panchGroup) {
+            return errorResponse(res, 'Panch group not found', 404);
+        }
+
+        // Find the member by Jain Aadhar number and access key
+        const member = panchGroup.members.find(m => 
+            m.personalDetails.jainAadharNumber === jainAadharNumber && 
+            m.accessKey === accessKey &&
+            m.status === 'active'
+        );
+
+        if (!member) {
+            return errorResponse(res, 'Invalid credentials or inactive member', 401);
+        }
+
+        // Return member details and Sangh info
+        return successResponse(res, {
+            panchMember: {
+                _id: member._id,
+                name: `${member.personalDetails.firstName} ${member.personalDetails.surname}`,
+                jainAadharNumber: member.personalDetails.jainAadharNumber,
+                accessKey: member.accessKey,
+                personalDetails: member.personalDetails
+            },
+            panchGroup: {
+                _id: panchGroup._id,
+                accessId: panchGroup.accessId,
+                term: panchGroup.term,
+                sangh: panchGroup.sanghId
+            }
+        }, 'Panch access validated successfully');
+
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
+    }
+});
+
 module.exports = {
     getPanchMembers,
     updatePanchStatus,
     createPanchGroup,
     getPanchGroup,
     editPanchMember,
-    deletePanchGroup
+    deletePanchGroup,
+    validatePanchAccess
 }; 

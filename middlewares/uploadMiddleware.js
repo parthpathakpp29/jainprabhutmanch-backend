@@ -35,7 +35,7 @@ const fileFilter = (req, file, cb) => {
 };
 
 // Determine folder based on file field name
-const getS3Folder = (fieldname) => {
+const getS3Folder = (fieldname, req) => {
   switch(fieldname) {
     case 'profilePicture':
       return 'profile-pictures/';
@@ -53,7 +53,12 @@ const getS3Folder = (fieldname) => {
       return 'posts/images/';
     case 'video': // For posts
       return 'posts/videos/';
-    case 'media': // For stories
+    case 'media': // For stories and Sangh/Panch posts
+      if (req && req.baseUrl && req.baseUrl.includes('sangh-posts')) {
+        return 'sanghs/posts/media/';
+      } else if (req && req.baseUrl && req.baseUrl.includes('panch-posts')) {
+        return 'panch/posts/media/';
+      }
       return 'stories/';
     // Add Sangathan document folders
     case 'presidentJainAadhar':
@@ -85,7 +90,7 @@ const upload = multer({
     contentType: multerS3.AUTO_CONTENT_TYPE,
     key: function (req, file, cb) {
       // Get folder based on file field name
-      const folder = getS3Folder(file.fieldname);
+      const folder = getS3Folder(file.fieldname, req);
       
       // Create unique filename with timestamp and random string
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
