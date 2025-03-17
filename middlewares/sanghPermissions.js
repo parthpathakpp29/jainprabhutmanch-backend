@@ -8,13 +8,35 @@ const hasLevelAccess = (userLevel, targetLevel, isSuperAdmin = false) => {
     if (isSuperAdmin) return true;
 
     const levelHierarchy = {
-        'country': ['country', 'state', 'district', 'city', 'area'],
-        'state': ['state', 'district', 'city', 'area'],
-        'district': ['district', 'city', 'area'],
-        'city': ['city', 'area'],
-        'area': ['area']
+        'country': ['state', 'district', 'city', 'area'],  // Country president can create any level below
+        'state': ['district', 'city', 'area'],            // State president can create any level below
+        'district': ['city', 'area'],                     // District president can create any level below
+        'city': ['area'],                                 // City president can only create area
+        'area': []                                        // Area president cannot create any level
     };
-    return levelHierarchy[userLevel]?.includes(targetLevel) || false;
+
+    // If user is at country level, they can create any level below country
+    if (userLevel === 'country') {
+        return levelHierarchy['country'].includes(targetLevel);
+    }
+    
+    // If user is at state level, they can create any level below state
+    if (userLevel === 'state') {
+        return levelHierarchy['state'].includes(targetLevel);
+    }
+    
+    // If user is at district level, they can create any level below district
+    if (userLevel === 'district') {
+        return levelHierarchy['district'].includes(targetLevel);
+    }
+    
+    // If user is at city level, they can only create area level
+    if (userLevel === 'city') {
+        return targetLevel === 'area';
+    }
+    
+    // Area level users cannot create any Sangh
+    return false;
 };
 
 // Check if user is president of the Sangh

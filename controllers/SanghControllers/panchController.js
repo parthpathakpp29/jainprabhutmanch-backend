@@ -257,11 +257,6 @@ const createPanchGroup = asyncHandler(async (req, res) => {
             const jainAadharFile = req.files[`members[${index}].jainAadharPhoto`]?.[0];
             const profileFile = req.files[`members[${index}].profilePhoto`]?.[0];
 
-            console.log(`Member ${index} files:`, {
-                jainAadhar: jainAadharFile?.location,
-                profile: profileFile?.location
-            });
-
             return {
                 personalDetails: member.personalDetails,
                 documents: {
@@ -282,22 +277,22 @@ const createPanchGroup = asyncHandler(async (req, res) => {
             }
         });
 
-        // 7. Return the Panch group with access keys for each member
-        const panchWithAccessKeys = {
+        // 7. Return the Panch group with single access key
+        const panchWithAccessKey = {
             _id: panchGroup._id,
             accessId: panchGroup.accessId,
+            accessKey: panchGroup.accessKey, // Single access key for all members
             sanghId: panchGroup.sanghId,
             members: panchGroup.members.map(member => ({
                 _id: member._id,
                 name: `${member.personalDetails.firstName} ${member.personalDetails.surname}`,
-                jainAadharNumber: member.personalDetails.jainAadharNumber,
-                accessKey: member.accessKey
+                jainAadharNumber: member.personalDetails.jainAadharNumber
             })),
             term: panchGroup.term,
             status: panchGroup.status
         };
 
-        return successResponse(res, panchWithAccessKeys, 'Panch group created successfully', 201);
+        return successResponse(res, panchWithAccessKey, 'Panch group created successfully', 201);
 
     } catch (error) {
         // Clean up uploaded files if there's an error
@@ -351,15 +346,19 @@ const validatePanchAccess = asyncHandler(async (req, res) => {
             return errorResponse(res, 'Panch group not found', 404);
         }
 
-        // Find the member by Jain Aadhar number and access key
+        // First verify the access key matches the group's key
+        if (panchGroup.accessKey !== accessKey) {
+            return errorResponse(res, 'Invalid access key', 401);
+        }
+
+        // Then find the member by Jain Aadhar number
         const member = panchGroup.members.find(m => 
             m.personalDetails.jainAadharNumber === jainAadharNumber && 
-            m.accessKey === accessKey &&
             m.status === 'active'
         );
 
         if (!member) {
-            return errorResponse(res, 'Invalid credentials or inactive member', 401);
+            return errorResponse(res, 'Member not found or inactive', 401);
         }
 
         // Return member details and Sangh info
@@ -368,7 +367,6 @@ const validatePanchAccess = asyncHandler(async (req, res) => {
                 _id: member._id,
                 name: `${member.personalDetails.firstName} ${member.personalDetails.surname}`,
                 jainAadharNumber: member.personalDetails.jainAadharNumber,
-                accessKey: member.accessKey,
                 personalDetails: member.personalDetails
             },
             panchGroup: {

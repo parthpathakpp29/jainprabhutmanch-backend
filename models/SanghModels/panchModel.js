@@ -70,12 +70,6 @@ const panchMemberSchema = new mongoose.Schema({
             required: [true, 'Profile photo is required']
         }
     },
-    accessKey: {
-        type: String,
-        default: function() {
-            return crypto.randomBytes(8).toString('hex').toUpperCase();
-        }
-    },
     status: {
         type: String,
         enum: ['active', 'inactive'],
@@ -106,6 +100,13 @@ const panchSchema = new mongoose.Schema({
             return 'PANCH-' + crypto.randomBytes(6).toString('hex').toUpperCase();
         }
     },
+    accessKey: {
+        type: String,
+        unique: true,
+        default: function() {
+            return crypto.randomBytes(8).toString('hex').toUpperCase();
+        }
+    },
     term: {
         startDate: {
             type: Date,
@@ -129,6 +130,6 @@ const panchSchema = new mongoose.Schema({
 panchSchema.index({ sanghId: 1, status: 1 });
 panchSchema.index({ 'members.personalDetails.jainAadharNumber': 1 });
 panchSchema.index({ accessId: 1 }, { unique: true });
-panchSchema.index({ 'members.accessKey': 1 });
+panchSchema.index({ accessKey: 1 }, { unique: true });
 
 module.exports = mongoose.model('Panch', panchSchema); 
