@@ -4,11 +4,15 @@ const crypto = require('crypto');
 const sanghAccessSchema = new mongoose.Schema({
     accessId: {
         type: String,
+        index: true,
+        sparse: true,
+        unique: true
     },
     sanghId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'HierarchicalSangh',
-        required: true
+        required: true,
+        index: true
     },
     level: {
         type: String,
@@ -83,8 +87,6 @@ sanghAccessSchema.pre('save', function(next) {
 });
 
 // Add indexes
-sanghAccessSchema.index({ accessId: 1 }, { unique: true });
-sanghAccessSchema.index({ sanghId: 1, status: 1 });
 sanghAccessSchema.index({ level: 1, status: 1 });
 sanghAccessSchema.index({ createdAt: -1 });
 

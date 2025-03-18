@@ -13,7 +13,8 @@ const {
     removeSanghMember,
     updateMemberDetails,
     getSanghMembers,
-    addMultipleSanghMembers
+    addMultipleSanghMembers,
+    checkOfficeBearerTerms
 } = require('../../controllers/SanghControllers/hierarchicalSanghController');
 
 const upload = require('../../middlewares/uploadMiddleware');
@@ -171,6 +172,11 @@ router.put('/:sanghId/members/:memberId',
 router.get('/:sanghId/members', 
     validateSanghAccess,
     getSanghMembers
+);
+
+router.get('/:sanghId/check-terms', 
+    authMiddleware,
+    checkOfficeBearerTerms
 );
 
 // Area-specific routes

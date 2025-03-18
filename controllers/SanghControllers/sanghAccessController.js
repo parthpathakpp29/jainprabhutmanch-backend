@@ -23,7 +23,43 @@ const generateSanghAccess = asyncHandler(async (req, res) => {
         });
         
         if (existingAccess) {
-            return errorResponse(res, 'Access already exists for this Sangh', 400);
+            // Update the Sangh with the existing access ID if it's missing
+            if (!sangh.sanghAccessId) {
+                await HierarchicalSangh.findByIdAndUpdate(sanghId, {
+                    sanghAccessId: existingAccess._id
+                });
+                
+                // Also ensure office bearers have proper roles
+                for (const bearer of sangh.officeBearers) {
+                    if (bearer.status === 'active') {
+                        // Check if user already has this role
+                        const user = await User.findById(bearer.userId);
+                        const hasRole = user.sanghRoles.some(role => 
+                            role.sanghId.toString() === sanghId.toString() && 
+                            role.role === bearer.role && 
+                            role.level === level
+                        );
+                        
+                        if (!hasRole) {
+                            await User.findByIdAndUpdate(bearer.userId, {
+                                $push: {
+                                    sanghRoles: {
+                                        sanghId: sangh._id,
+                                        role: bearer.role,
+                                        level: level
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+            
+            return successResponse(res, {
+                accessId: existingAccess.accessId,
+                level: existingAccess.level,
+                sanghAccessId: existingAccess._id
+            }, 'Existing Sangh access returned successfully');
         }
 
         // Create new Sangh access
@@ -34,10 +70,41 @@ const generateSanghAccess = asyncHandler(async (req, res) => {
             createdBy: userId,
             parentSanghAccess: req.body.parentSanghAccess
         });
+        
+        // Update the Sangh with the sanghAccessId
+        await HierarchicalSangh.findByIdAndUpdate(sanghId, {
+            sanghAccessId: sanghAccess._id
+        });
+        
+        // Ensure office bearers have proper roles
+        for (const bearer of sangh.officeBearers) {
+            if (bearer.status === 'active') {
+                // Check if user already has this role
+                const user = await User.findById(bearer.userId);
+                const hasRole = user.sanghRoles.some(role => 
+                    role.sanghId.toString() === sanghId.toString() && 
+                    role.role === bearer.role && 
+                    role.level === level
+                );
+                
+                if (!hasRole) {
+                    await User.findByIdAndUpdate(bearer.userId, {
+                        $push: {
+                            sanghRoles: {
+                                sanghId: sangh._id,
+                                role: bearer.role,
+                                level: level
+                            }
+                        }
+                    });
+                }
+            }
+        }
 
         return successResponse(res, {
             accessId: sanghAccess.accessId,
-            level: sanghAccess.level
+            level: sanghAccess.level,
+            sanghAccessId: sanghAccess._id
         }, 'Sangh access created successfully', 201);
     } catch (error) {
         return errorResponse(res, error.message, 500);

@@ -36,6 +36,16 @@ const officeBearerSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    appointmentDate: {
+        type: Date,
+        default: Date.now,
+        required: true
+    },
+    termEndDate: {
+        type: Date,
+        default: () => new Date(Date.now() + (2 * 365 * 24 * 60 * 60 * 1000)), // 2 years from appointment
+        required: true
+    },
     status: {
         type: String,
         enum: ['active', 'inactive'],
@@ -199,22 +209,35 @@ hierarchicalSanghSchema.methods.validateHierarchy = async function() {
     }
 
     if (!this.parentSangh) {
-        throw new Error(`${this.level} level Sangh must have a parent Sangh`);
+        throw new Error('Non-country level Sangh must have a parent Sangh');
     }
 
-    const parentSangh = await this.model('HierarchicalSangh').findById(this.parentSangh);
+    const parentSangh = await this.constructor.findById(this.parentSangh);
     if (!parentSangh) {
         throw new Error('Parent Sangh not found');
     }
 
-    const hierarchyOrder = ['country', 'state', 'district', 'city', 'area'];
-    const parentIndex = hierarchyOrder.indexOf(parentSangh.level);
-    const currentIndex = hierarchyOrder.indexOf(this.level);
+    const levelHierarchy = ['country', 'state', 'district', 'city', 'area'];
+    const parentIndex = levelHierarchy.indexOf(parentSangh.level);
+    const currentIndex = levelHierarchy.indexOf(this.level);
 
-    if (currentIndex <= parentIndex || currentIndex - parentIndex !== 1) {
-        throw new Error(`Invalid hierarchy: ${this.level} level cannot be under ${parentSangh.level} level`);
+    if (currentIndex <= parentIndex || currentIndex - parentIndex > 1) {
+        throw new Error(`Invalid hierarchy: ${this.level} level cannot be directly under ${parentSangh.level} level`);
     }
 };
+
+// Add pre-save middleware to ensure validation
+hierarchicalSanghSchema.pre('save', async function(next) {
+    if (this.isNew) {
+        try {
+            await this.validateHierarchy();
+        } catch (error) {
+            next(error);
+            return;
+        }
+    }
+    next();
+});
 
 hierarchicalSanghSchema.methods.getHierarchy = async function() {
     const hierarchy = {

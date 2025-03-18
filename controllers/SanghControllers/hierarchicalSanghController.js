@@ -101,6 +101,18 @@ const createHierarchicalSangh = asyncHandler(async (req, res) => {
         // Validate office bearers
         await validateOfficeBearers(officeBearers);
 
+        // Validate hierarchy level before creation
+        const parentSangh = parentSanghId ? await HierarchicalSangh.findById(parentSanghId) : null;
+        if (parentSangh) {
+            const levelHierarchy = ['country', 'state', 'district', 'city', 'area'];
+            const parentIndex = levelHierarchy.indexOf(parentSangh.level);
+            const currentIndex = levelHierarchy.indexOf(level);
+            
+            if (currentIndex <= parentIndex || currentIndex - parentIndex > 1) {
+                return errorResponse(res, `Invalid hierarchy: ${level} level cannot be directly under ${parentSangh.level} level`, 400);
+            }
+        }
+
         // Format office bearers data
         const formattedOfficeBearers = await Promise.all(['president', 'secretary', 'treasurer'].map(async role => {
             const user = await User.findOne({ jainAadharNumber: officeBearers[role].jainAadharNumber });
@@ -352,36 +364,55 @@ const updateHierarchicalSangh = asyncHandler(async (req, res) => {
     }
 });
 
-// Helper function to delete S3 file
-const deleteS3File = async (fileUrl) => {
+// Check office bearer terms
+const checkOfficeBearerTerms = asyncHandler(async (req, res) => {
     try {
-        const key = extractS3KeyFromUrl(fileUrl);
-        if (key) {
-            const deleteParams = {
-                Bucket: process.env.AWS_BUCKET_NAME,
-                Key: key
-            };
-            await s3Client.send(new DeleteObjectCommand(deleteParams));
-        }
-    } catch (error) {
-        console.error(`Error deleting file from S3: ${fileUrl}`, error);
-    }
-};
+        const { sanghId } = req.params;
 
-// Helper function to delete multiple S3 files
-const deleteS3Files = async (files) => {
-    const deletePromises = [];
-    for (const [role, roleFiles] of Object.entries(files)) {
-        if (Array.isArray(roleFiles)) {
-            roleFiles.forEach(file => {
-                if (file.location) {
-                    deletePromises.push(deleteS3File(file.location));
+        const sangh = await HierarchicalSangh.findById(sanghId);
+        if (!sangh) {
+            return errorResponse(res, 'Sangh not found', 404);
+        }
+
+        const currentDate = new Date();
+        const expiredBearers = sangh.officeBearers.filter(bearer => 
+            bearer.status === 'active' && bearer.termEndDate < currentDate
+        );
+
+        if (expiredBearers.length > 0) {
+            // Mark expired bearers as inactive
+            await HierarchicalSangh.updateOne(
+                { _id: sanghId },
+                { 
+                    $set: {
+                        'officeBearers.$[elem].status': 'inactive'
+                    }
+                },
+                {
+                    arrayFilters: [{ 
+                        'elem.status': 'active',
+                        'elem.termEndDate': { $lt: currentDate }
+                    }]
                 }
+            );
+
+            return successResponse(res, {
+                message: 'Office bearer terms checked',
+                expiredBearers: expiredBearers.map(b => ({
+                    role: b.role,
+                    name: b.name,
+                    termEndDate: b.termEndDate
+                }))
             });
         }
+
+        return successResponse(res, {
+            message: 'No expired terms found'
+        });
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
     }
-    await Promise.all(deletePromises);
-};
+});
 
 // Add member(s) to Sangh
 const addSanghMember = asyncHandler(async (req, res) => {
@@ -720,6 +751,37 @@ const addMultipleSanghMembers = asyncHandler(async (req, res) => {
     return addSanghMember(req, res);
 });
 
+// Helper function to delete S3 file
+const deleteS3File = async (fileUrl) => {
+    try {
+        const key = extractS3KeyFromUrl(fileUrl);
+        if (key) {
+            const deleteParams = {
+                Bucket: process.env.AWS_BUCKET_NAME,
+                Key: key
+            };
+            await s3Client.send(new DeleteObjectCommand(deleteParams));
+        }
+    } catch (error) {
+        console.error(`Error deleting file from S3: ${fileUrl}`, error);
+    }
+};
+
+// Helper function to delete multiple S3 files
+const deleteS3Files = async (files) => {
+    const deletePromises = [];
+    for (const [role, roleFiles] of Object.entries(files)) {
+        if (Array.isArray(roleFiles)) {
+            roleFiles.forEach(file => {
+                if (file.location) {
+                    deletePromises.push(deleteS3File(file.location));
+                }
+            });
+        }
+    }
+    await Promise.all(deletePromises);
+};
+
 module.exports = {
     createHierarchicalSangh,
     getHierarchy,
@@ -730,5 +792,6 @@ module.exports = {
     removeSanghMember,
     updateMemberDetails,
     getSanghMembers,
-    addMultipleSanghMembers
+    addMultipleSanghMembers,
+    checkOfficeBearerTerms
 }; 

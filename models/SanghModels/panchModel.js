@@ -82,7 +82,7 @@ const panchSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'HierarchicalSangh',
         required: [true, 'Sangh ID is required'],
-        unique: true // Only one active Panch group per Sangh
+        index: true
     },
     members: {
         type: [panchMemberSchema],
@@ -96,6 +96,7 @@ const panchSchema = new mongoose.Schema({
     accessId: {
         type: String,
         unique: true,
+        sparse: true,
         default: function() {
             return 'PANCH-' + crypto.randomBytes(6).toString('hex').toUpperCase();
         }
@@ -103,6 +104,7 @@ const panchSchema = new mongoose.Schema({
     accessKey: {
         type: String,
         unique: true,
+        sparse: true,
         default: function() {
             return crypto.randomBytes(8).toString('hex').toUpperCase();
         }
@@ -126,10 +128,8 @@ const panchSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// Add indexes
-panchSchema.index({ sanghId: 1, status: 1 });
+// Add indexes (only those not defined in schema)
+panchSchema.index({ status: 1 });
 panchSchema.index({ 'members.personalDetails.jainAadharNumber': 1 });
-panchSchema.index({ accessId: 1 }, { unique: true });
-panchSchema.index({ accessKey: 1 }, { unique: true });
 
 module.exports = mongoose.model('Panch', panchSchema); 
