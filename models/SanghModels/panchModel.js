@@ -93,22 +93,6 @@ const panchSchema = new mongoose.Schema({
             message: 'Panch must have exactly 5 active members'
         }
     },
-    accessId: {
-        type: String,
-        unique: true,
-        sparse: true,
-        default: function() {
-            return 'PANCH-' + crypto.randomBytes(6).toString('hex').toUpperCase();
-        }
-    },
-    accessKey: {
-        type: String,
-        unique: true,
-        sparse: true,
-        default: function() {
-            return crypto.randomBytes(8).toString('hex').toUpperCase();
-        }
-    },
     term: {
         startDate: {
             type: Date,

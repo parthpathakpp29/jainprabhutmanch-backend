@@ -14,6 +14,12 @@ const sanghAccessSchema = new mongoose.Schema({
         required: true,
         index: true
     },
+    sanghType: {
+        type: String,
+        enum: ['main', 'women', 'youth'],
+        default: 'main',
+        required: true
+    },
     level: {
         type: String,
         enum: ['country', 'state', 'district', 'city', 'area'],
@@ -86,9 +92,11 @@ sanghAccessSchema.pre('save', function(next) {
     next();
 });
 
-// Add indexes
-sanghAccessSchema.index({ level: 1, status: 1 });
-sanghAccessSchema.index({ createdAt: -1 });
+// Optimize indexes for common query patterns
+sanghAccessSchema.index({ accessId: 1 }, { unique: true, sparse: true }); // For access code lookups
+sanghAccessSchema.index({ sanghId: 1, status: 1 }); // For finding active access by Sangh
+sanghAccessSchema.index({ parentSanghAccess: 1, level: 1, status: 1 }); // For hierarchy queries
+sanghAccessSchema.index({ 'location.state': 1, 'location.district': 1, level: 1 }); // For location-based queries
 
 // Add method to validate hierarchy
 sanghAccessSchema.methods.validateHierarchy = async function() {

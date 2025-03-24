@@ -1,6 +1,7 @@
 const asyncHandler = require('express-async-handler');
 const Panch = require('../../models/SanghModels/panchModel');
 const HierarchicalSangh = require('../../models/SanghModels/hierarchicalSanghModel');
+const User = require('../../models/UserRegistrationModels/userModel'); 
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
@@ -8,18 +9,21 @@ const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
 // Get all Panch members of a Sangh
 const getPanchMembers = asyncHandler(async (req, res) => {
     try {
-        const { sanghId } = req.params;
-        const { status } = req.query;
-
-        const query = { sanghId };
-        if (status) {
-            query.status = status;
+        const { panchId } = req.params;
+        
+        // Find the specific Panch group by ID
+        const panchGroup = await Panch.findById(panchId)
+            .select('members term status sanghId')
+            .lean();
+            
+        if (!panchGroup) {
+            return errorResponse(res, 'Panch group not found', 404);
         }
-
-        const panchMembers = await Panch.find(query)
-            .sort({ createdAt: -1 });
-
-        return successResponse(res, panchMembers, 'Panch members retrieved successfully');
+        
+        // Extract members from the Panch group
+        const members = panchGroup.members || [];
+        
+        return successResponse(res, members, 'Panch members retrieved successfully');
     } catch (error) {
         return errorResponse(res, error.message, 500);
     }
@@ -277,11 +281,36 @@ const createPanchGroup = asyncHandler(async (req, res) => {
             }
         });
 
-        // 7. Return the Panch group with single access key
-        const panchWithAccessKey = {
+        // 7. Add Panch roles to each member's user account
+        for (const member of parsedMembers) {
+            const user = await User.findOne({ jainAadharNumber: member.personalDetails.jainAadharNumber });
+            if (user) {
+                // Add Panch role to the user
+                if (!user.panchRoles) {
+                    user.panchRoles = [];
+                }
+                
+                // Check if the user already has this role
+                const hasRole = user.panchRoles.some(role => 
+                    role.panchId.toString() === panchGroup._id.toString() && 
+                    role.sanghId.toString() === sanghId.toString()
+                );
+                
+                if (!hasRole) {
+                    user.panchRoles.push({
+                        panchId: panchGroup._id,
+                        sanghId: sanghId,
+                        startDate: new Date(),
+                        endDate: new Date(Date.now() + (2 * 365 * 24 * 60 * 60 * 1000)) // 2 years
+                    });
+                    await user.save();
+                }
+            }
+        }
+
+        // 8. Return the Panch group information
+        const panchResponse = {
             _id: panchGroup._id,
-            accessId: panchGroup.accessId,
-            accessKey: panchGroup.accessKey, // Single access key for all members
             sanghId: panchGroup.sanghId,
             members: panchGroup.members.map(member => ({
                 _id: member._id,
@@ -292,7 +321,7 @@ const createPanchGroup = asyncHandler(async (req, res) => {
             status: panchGroup.status
         };
 
-        return successResponse(res, panchWithAccessKey, 'Panch group created successfully', 201);
+        return successResponse(res, panchResponse, 'Panch group created successfully', 201);
 
     } catch (error) {
         // Clean up uploaded files if there's an error
@@ -338,12 +367,20 @@ const validatePanchAccess = asyncHandler(async (req, res) => {
     try {
         const { panchId, jainAadharNumber, accessKey } = req.body;
 
-        // Find the Panch group
+        // Find the Panch group with minimal fields
         const panchGroup = await Panch.findById(panchId)
-            .populate('sanghId', 'name level location');
+            .select('accessKey members.personalDetails members.status term sanghId')
+            .populate('sanghId', 'name level location')
+            .lean();
             
         if (!panchGroup) {
             return errorResponse(res, 'Panch group not found', 404);
+        }
+
+        // Check if term has expired
+        const now = new Date();
+        if (panchGroup.term && panchGroup.term.endDate < now) {
+            return errorResponse(res, 'Panch group term has expired', 401);
         }
 
         // First verify the access key matches the group's key

@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const {
     validateSangh,
     createPanchGroup,
@@ -7,38 +8,31 @@ const {
     getPanchMembers,
     updatePanchStatus,
     editPanchMember,
-    deletePanchGroup,
-    validatePanchAccess
+    deletePanchGroup
 } = require('../../controllers/SanghControllers/panchController');
-const { authMiddleware } = require('../../middlewares/authMiddlewares');
+const { authMiddleware, verifyPanchRole } = require('../../middlewares/authMiddlewares');
 const { isPresident } = require('../../middlewares/sanghPermissions');
 const { panchGroupDocs } = require('../../middlewares/uploadMiddleware');
 const { body } = require('express-validator');
 
+// Rate limiters
+const createPanchLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 5, // 5 requests per window
+    message: 'Too many Panch group creation attempts, please try again later'
+});
+
 // Protect all routes
 router.use(authMiddleware);
 
-// Validate Panch Access
-router.post('/validate-access',
-    [
-        body('panchId').isMongoId().withMessage('Invalid Panch ID'),
-        body('jainAadharNumber').notEmpty().withMessage('Jain Aadhar number is required'),
-        body('accessKey').notEmpty().withMessage('Access key is required')
-    ],
-    validatePanchAccess
-);
-
-// Validate Sangh ID
-// router.get('/validate/:sanghId', validateSangh);
-
-// Panch group management
-router.post('/:sanghId/group', isPresident, panchGroupDocs, createPanchGroup);
+// Panch group management with rate limiting
+router.post('/:sanghId/group', createPanchLimiter, isPresident, panchGroupDocs, createPanchGroup);
 router.get('/:sanghId/group', getPanchGroup);
-router.delete('/:sanghId/group', isPresident, deletePanchGroup);
+router.get('/:panchId/members', getPanchMembers);
 
-// Member management routes
-router.get('/:sanghId/members', getPanchMembers);
-router.put('/:sanghId/members/:panchId/status', isPresident, panchGroupDocs, updatePanchStatus);
-router.put('/:sanghId/members/:panchId', isPresident, editPanchMember);
+// Panch member management
+router.put('/:panchId/member/:memberId', verifyPanchRole, editPanchMember);
+router.put('/:panchId/status', verifyPanchRole, updatePanchStatus);
+router.delete('/:panchId', verifyPanchRole, deletePanchGroup);
 
-module.exports = router; 
+module.exports = router;

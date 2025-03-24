@@ -1,6 +1,7 @@
 const User = require('../models/UserRegistrationModels/userModel');
 const HierarchicalSangh = require('../models/SanghModels/hierarchicalSanghModel');
-const { errorResponse } = require('../utils/apiResponse');
+const { errorResponse, successResponse } = require('../utils/apiResponse');
+const asyncHandler = require('express-async-handler');
 
 // Helper function to check if a level has access to another level
 const hasLevelAccess = (userLevel, targetLevel, isSuperAdmin = false) => {
@@ -52,58 +53,25 @@ const isPresident = async (req, res, next) => {
                 return errorResponse(res, 'Sangh not found', 404);
             }
             req.sangh = targetSangh;
-            req.presidentRole = { level: 'country' }; // Give highest level access
             return next();
         }
 
-        const user = await User.findById(userId);
-        if (!user) {
-            return errorResponse(res, 'User not found', 404);
+        // Check if user has president role for this Sangh
+        const hasPresidentRole = req.user.sanghRoles && req.user.sanghRoles.some(role => 
+            role.sanghId.toString() === sanghId && role.role === 'president'
+        );
+
+        if (!hasPresidentRole) {
+            return errorResponse(res, 'You do not have permission to perform this action. Only Sangh president can access this.', 403);
         }
 
-        const targetSangh = await HierarchicalSangh.findById(sanghId);
-        if (!targetSangh) {
+        // Get the Sangh details for use in the controller
+        const sangh = await HierarchicalSangh.findById(sanghId);
+        if (!sangh) {
             return errorResponse(res, 'Sangh not found', 404);
         }
 
-        // Get user's president roles
-        const presidentRoles = user.sanghRoles.filter(role => role.role === 'president');
-
-        let hasAccess = false;
-        for (const role of presidentRoles) {
-            // Direct presidency
-            if (role.sanghId.toString() === sanghId) {
-                hasAccess = true;
-                break;
-            }
-
-            // Higher level access check - Country president gets full access to lower levels
-            const presidentSangh = await HierarchicalSangh.findById(role.sanghId);
-            if (presidentSangh && role.level === 'country') {
-                if (['state', 'district', 'city', 'area'].includes(targetSangh.level)) {
-                    hasAccess = true;
-                    break;
-                }
-            }
-            // Other level presidents maintain their regular hierarchy
-            else if (presidentSangh) {
-                if (hasLevelAccess(role.level, targetSangh.level)) {
-                    hasAccess = true;
-                    break;
-                }
-            }
-        }
-
-        if (!hasAccess) {
-            return errorResponse(res, 'Only the President can perform this action', 403);
-        }
-
-        req.sangh = targetSangh;
-        req.presidentRole = presidentRoles.find(role => {
-            if (role.sanghId.toString() === sanghId) return true;
-            return hasLevelAccess(role.level, targetSangh.level);
-        });
-
+        req.sangh = sangh;
         next();
     } catch (error) {
         return errorResponse(res, error.message, 500);
@@ -111,47 +79,43 @@ const isPresident = async (req, res, next) => {
 };
 
 // Check if user is an office bearer
-const isOfficeBearer = async (req, res, next) => {
+const isOfficeBearer = asyncHandler(async (req, res, next) => {
     try {
-        const sanghId = req.params.sanghId || req.params.id;
+        const sanghId = req.params.sanghId;
         const userId = req.user._id;
 
-        const user = await User.findById(userId);
-        if (!user) {
-            return errorResponse(res, 'User not found', 404);
+        // If user is superadmin, grant full access
+        if (req.user.role === 'superadmin') {
+            const targetSangh = await HierarchicalSangh.findById(sanghId);
+            if (!targetSangh) {
+                return errorResponse(res, 'Sangh not found', 404);
+            }
+            req.sangh = targetSangh;
+            return next();
         }
 
+        // Check if user has any office bearer role for this Sangh
+        const hasOfficeBearerRole = req.user.sanghRoles && Array.isArray(req.user.sanghRoles) && req.user.sanghRoles.some(role => 
+            role.sanghId.toString() === sanghId && 
+            ['president', 'secretary', 'treasurer'].includes(role.role)
+        );
+
+        if (!hasOfficeBearerRole) {
+            return errorResponse(res, 'You do not have permission to perform this action. Only office bearers can access this.', 403);
+        }
+
+        // Get the Sangh details for use in the controller
         const sangh = await HierarchicalSangh.findById(sanghId);
         if (!sangh) {
             return errorResponse(res, 'Sangh not found', 404);
         }
 
-        // Check if user has any office bearer role for this Sangh or higher level access
-        const officeBearerRoles = user.sanghRoles.filter(role => 
-            ['president', 'secretary', 'treasurer'].includes(role.role)
-        );
-
-        const hasAccess = officeBearerRoles.some(role => {
-            const hasDirectAccess = role.sanghId.toString() === sanghId;
-            const hasHierarchicalAccess = hasLevelAccess(role.level, sangh.level);
-            return hasDirectAccess || hasHierarchicalAccess;
-        });
-
-        if (!hasAccess) {
-            return errorResponse(res, 'Only office bearers can perform this action', 403);
-        }
-
         req.sangh = sangh;
-        req.userRole = officeBearerRoles.find(role => 
-            role.sanghId.toString() === sanghId || 
-            hasLevelAccess(role.level, sangh.level)
-        ).role;
-        
         next();
     } catch (error) {
         return errorResponse(res, error.message, 500);
     }
-};
+});
 
 // Middleware to check if user has access to the target level
 const canAccessLevel = async (req, res, next) => {
@@ -174,169 +138,170 @@ const canAccessLevel = async (req, res, next) => {
 };
 
 // Check if user can review Jain Aadhar applications based on location
-const canReviewJainAadharByLocation = async (req, res, next) => {
+const canReviewJainAadharByLocation = asyncHandler(async (req, res, next) => {
     try {
-        const { applicationId } = req.params;
+        const { state, district, city, area } = req.body.location;
         const userId = req.user._id;
         
-        // If user is superadmin, allow access
-        if (req.user.role === 'superadmin') {
-            return next();
+        // Find all Sanghs where user is an office bearer
+        const userSanghs = await HierarchicalSangh.find({
+            'officeBearers': {
+                $elemMatch: {
+                    userId: userId,
+                    status: 'active',
+                    role: 'president'
+                }
+            }
+        });
+
+        if (!userSanghs || userSanghs.length === 0) {
+            return errorResponse(res, 'You do not have permission to review applications', 403);
         }
-        
-        // If user is admin with verify permissions, allow access
-        if (req.user.role === 'admin' && req.user.adminPermissions.includes('verify_jain_aadhar')) {
-            return next();
-        }
-        
-        // Get the application
-        const JainAadhar = require('../models/UserRegistrationModels/jainAadharModel');
-        const application = await JainAadhar.findById(applicationId);
-        
-        if (!application) {
-            return errorResponse(res, 'Application not found', 404);
-        }
-        
-        // Check if user has president role at the appropriate level
-        const user = await User.findById(userId);
-        if (!user) {
-            return errorResponse(res, 'User not found', 404);
-        }
-        
-        // Get user's president roles
-        const presidentRoles = user.sanghRoles.filter(role => role.role === 'president');
-        
-        if (presidentRoles.length === 0) {
-            return errorResponse(res, 'Only presidents can review applications', 403);
-        }
-        
-        // Check if any of the user's president roles match the application level and location
+
+        // Check if user has authority over the application location
         let hasAuthority = false;
-        for (const role of presidentRoles) {
-            if (role.level === application.applicationLevel) {
-                const sangh = await HierarchicalSangh.findById(role.sanghId);
-                if (!sangh) continue;
-                
-                // Check location match based on level
-                if (role.level === 'area') {
-                    if (sangh.location.area === application.location.area &&
-                        sangh.location.city === application.location.city &&
-                        sangh.location.district === application.location.district &&
-                        sangh.location.state === application.location.state) {
-                        hasAuthority = true;
-                        break;
-                    }
-                } else if (role.level === 'city') {
-                    if (sangh.location.city === application.location.city &&
-                        sangh.location.district === application.location.district &&
-                        sangh.location.state === application.location.state) {
-                        hasAuthority = true;
-                        break;
-                    }
-                } else if (role.level === 'district') {
-                    if (sangh.location.district === application.location.district &&
-                        sangh.location.state === application.location.state) {
-                        hasAuthority = true;
-                        break;
-                    }
-                } else if (role.level === 'state') {
-                    if (sangh.location.state === application.location.state) {
-                        hasAuthority = true;
-                        break;
-                    }
-                } else if (role.level === 'country') {
+        for (const sangh of userSanghs) {
+            switch (sangh.level) {
+                case 'country':
                     hasAuthority = true;
                     break;
+                case 'state':
+                    if (sangh.location.state === state) {
+                        hasAuthority = true;
+                    }
+                    break;
+                case 'district':
+                    if (sangh.location.state === state && 
+                        sangh.location.district === district) {
+                        hasAuthority = true;
+                    }
+                    break;
+                case 'city':
+                    if (sangh.location.state === state && 
+                        sangh.location.district === district && 
+                        sangh.location.city === city) {
+                        hasAuthority = true;
+                    }
+                    break;
+                case 'area':
+                    if (sangh.location.state === state && 
+                        sangh.location.district === district && 
+                        sangh.location.city === city && 
+                        sangh.location.area === area) {
+                        hasAuthority = true;
+                    }
+                    break;
                 }
+            if (hasAuthority) {
+                req.reviewingSanghId = sangh._id;
+                req.reviewingLevel = sangh.level;
+                break;
             }
         }
         
         if (!hasAuthority) {
-            return errorResponse(res, 'You do not have authority to review this application', 403);
+            return errorResponse(res, 'You do not have authority to review applications from this location', 403);
         }
         
         next();
     } catch (error) {
         return errorResponse(res, error.message, 500);
     }
-};
+});
 
 // Check if user can post as Sangh
-const canPostAsSangh = async (req, res, next) => {
+const canPostAsSangh = asyncHandler(async (req, res, next) => {
     try {
         const sanghId = req.params.sanghId;
         const userId = req.user._id;
         
-        // If user is superadmin, allow access
-        if (req.user.role === 'superadmin') {
-            // Still need to check if the Sangh exists
-            const sangh = await HierarchicalSangh.findById(sanghId);
-            if (!sangh) {
-                return errorResponse(res, 'Sangh not found', 404);
-            }
-            
-            // Set a default role for superadmin
-            req.officeBearerRole = 'president';
-            return next();
-        }
-        
-        // Check if user is an office bearer
-        const user = await User.findById(userId);
-        if (!user) {
-            return errorResponse(res, 'User not found', 404);
-        }
-        
-        const officeBearerRole = user.sanghRoles.find(role => 
-            role.sanghId.toString() === sanghId && 
-            ['president', 'secretary', 'treasurer'].includes(role.role)
-        );
-        
-        if (!officeBearerRole) {
-            return errorResponse(res, 'Only office bearers can post on behalf of the Sangh', 403);
-        }
-        
-        // Check if the Sangh exists
         const sangh = await HierarchicalSangh.findById(sanghId);
         if (!sangh) {
             return errorResponse(res, 'Sangh not found', 404);
         }
         
-        // Add role to request for controller use
-        req.officeBearerRole = officeBearerRole.role;
-        req.sangh = sangh;
-        
+        const officeBearer = sangh.officeBearers.find(
+            bearer => bearer.userId.toString() === userId.toString() && bearer.status === 'active'
+        );
+
+        if (!officeBearer) {
+            return errorResponse(res, 'Only office bearers can post as Sangh', 403);
+        }
+
+        req.officeBearerRole = officeBearer.role;
         next();
     } catch (error) {
         return errorResponse(res, error.message, 500);
     }
-};
+});
 
 // Check if user is a Panch member
 const isPanchMember = async (req, res, next) => {
     try {
-        const { panchId, accessKey } = req.body;
+        const panchId = req.params.panchId;
+        const userId = req.user._id;
         
         // If user is superadmin, allow access
-        if (req.user.role === 'superadmin') {
+        if (req.user.role === 'superadmin' || req.user.role === 'admin') {
+            // Still need to find the Panch group to attach to req
+            const Panch = require('../models/SanghModels/panchModel');
+            const panchGroup = await Panch.findById(panchId).lean();
+            
+            if (!panchGroup) {
+                return errorResponse(res, 'Panch group not found', 404);
+            }
+            
+            // Add Panch group to request for controller use
+            req.panchGroup = panchGroup;
+            req.sanghId = panchGroup.sanghId;
+            
+            // For admin, we'll set a placeholder member
+            req.panchMember = panchGroup.members[0] || { _id: null };
+            
             return next();
         }
         
         // Find the Panch group
         const Panch = require('../models/SanghModels/panchModel');
-        const panchGroup = await Panch.findById(panchId);
+        const User = require('../models/UserRegistrationModels/userModel');
+        
+        // Get user with panch roles
+        const user = await User.findById(userId).select('panchRoles jainAadharNumber').lean();
+        
+        if (!user || !user.panchRoles || !user.panchRoles.length) {
+            return errorResponse(res, 'You are not a member of any Panch group', 403);
+        }
+        
+        // Check if user has a role in this Panch - simplified check without status
+        const hasPanchRole = user.panchRoles.some(role => 
+            role.panchId.toString() === panchId
+        );
+        
+        if (!hasPanchRole) {
+            return errorResponse(res, 'You are not a member of this Panch group', 403);
+        }
+        
+        // Find the Panch group
+        const panchGroup = await Panch.findById(panchId).lean();
         
         if (!panchGroup) {
             return errorResponse(res, 'Panch group not found', 404);
         }
         
-        // Check if the access key matches any of the Panch members
+        // Check if term has expired
+        const now = new Date();
+        if (now > new Date(panchGroup.term.endDate)) {
+            return errorResponse(res, 'Panch term has expired', 403);
+        }
+        
+        // Find the member in the Panch group with matching Jain Aadhar number
         const member = panchGroup.members.find(m => 
-            m.accessKey === accessKey && 
+            m.personalDetails.jainAadharNumber === user.jainAadharNumber && 
             m.status === 'active'
         );
         
         if (!member) {
-            return errorResponse(res, 'Invalid access key or inactive member', 403);
+            return errorResponse(res, 'No active member found with your Jain Aadhar number in this Panch group', 401);
         }
         
         // Add Panch group and member to request for controller use
@@ -350,51 +315,243 @@ const isPanchMember = async (req, res, next) => {
     }
 };
 
-const canManageAreaSangh = async (req, res, next) => {
+// Check if user can manage area Sangh
+const canManageAreaSangh = asyncHandler(async (req, res, next) => {
     try {
-        const { sanghId } = req.params;
+        const sanghId = req.params.sanghId;
+        const userId = req.user._id;
+
         const sangh = await HierarchicalSangh.findById(sanghId);
-        
         if (!sangh) {
-            return res.status(404).json({
-                success: false,
-                message: 'Sangh not found'
-            });
+            return errorResponse(res, 'Sangh not found', 404);
         }
 
         if (sangh.level !== 'area') {
-            return res.status(403).json({
-                success: false,
-                message: 'This operation is only allowed for area level Sanghs'
-            });
+            return errorResponse(res, 'This operation is only allowed for area level Sanghs', 403);
         }
 
-        // Check if user has permission to manage this area
-        const hasPermission = req.user.sanghRoles.some(role => 
-            (role.level === 'area' && role.sanghId.equals(sanghId)) || // Area level officer
-            (role.level === 'city' && sangh.location.city === role.location.city) || // City level officer
-            (role.level === 'district' && sangh.location.district === role.location.district) || // District level officer
-            (role.level === 'state' && sangh.location.state === role.location.state) || // State level officer
-            (role.level === 'country') || // Country level officer
-            req.user.role === 'superadmin' // Superadmin
+        const officeBearer = sangh.officeBearers.find(
+            bearer => bearer.userId.toString() === userId.toString() && bearer.status === 'active'
         );
 
-        if (!hasPermission) {
-            return res.status(403).json({
-                success: false,
-                message: 'You do not have permission to manage this area Sangh'
-            });
+        if (!officeBearer) {
+            return errorResponse(res, 'You must be an office bearer to manage this area Sangh', 403);
         }
 
+        req.officeBearerRole = officeBearer.role;
+        req.sangh = sangh;
         next();
     } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: 'Error checking area Sangh permissions',
-            error: error.message
+        return errorResponse(res, error.message, 500);
+    }
+});
+
+// Check if user is a president of a main Sangh
+const isMainSanghPresident = async (req, res, next) => {
+    try {
+        const userId = req.user._id;
+        
+        // Find a Sangh where the user is an active president
+        const sangh = await HierarchicalSangh.findOne({
+            'officeBearers': {
+                $elemMatch: {
+                    userId: userId,
+                    role: 'president',
+                    status: 'active'
+                }
+            },
+            'status': 'active',
+            'sanghType': 'main'
         });
+        
+        if (!sangh) {
+            return errorResponse(res, 'You must be an active president of a main Sangh to perform this action', 403);
+        }
+        
+        // Store the sangh in the request for later use
+        req.mainSangh = sangh;
+        next();
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
     }
 };
+
+// Check if user is a president of a specialized Sangh (women/youth)
+const isSpecializedSanghPresident = async (req, res, next) => {
+    try {
+        const userId = req.user._id;
+        const { sanghType } = req.body;
+        
+        // Validate sanghType
+        if (!['women', 'youth'].includes(sanghType)) {
+            return errorResponse(res, 'Invalid Sangh type. Must be "women" or "youth"', 400);
+        }
+        
+        // Find a Sangh where the user is an active president
+        const sangh = await HierarchicalSangh.findOne({
+            'officeBearers': {
+                $elemMatch: {
+                    userId: userId,
+                    role: 'president',
+                    status: 'active'
+                }
+            },
+            'status': 'active',
+            'sanghType': sanghType
+        });
+        
+        if (!sangh) {
+            return errorResponse(res, `You must be an active president of a ${sanghType} Sangh to perform this action`, 403);
+        }
+        
+        // Store the sangh in the request for later use
+        req.specializedSangh = sangh;
+        next();
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
+    }
+};
+
+// Check if user can manage specialized Sangh (either as its president or as the main Sangh president)
+const canManageSpecializedSangh = asyncHandler(async (req, res, next) => {
+    try {
+        const sanghId = req.params.sanghId || req.params.id;
+        const userId = req.user._id;
+        
+        console.log('Specialized Sangh middleware - sanghId:', sanghId);
+        console.log('Specialized Sangh middleware - userId:', userId);
+
+        // If user is superadmin, grant full access
+        if (req.user.role === 'superadmin' || req.user.role === 'admin') {
+            const sangh = await HierarchicalSangh.findById(sanghId)
+                .select('name level location status officeBearers members sanghType parentMainSangh');
+            if (!sangh) {
+                return errorResponse(res, 'Sangh not found', 404);
+            }
+            req.sangh = sangh;
+            return next();
+        }
+
+        // Get the specialized Sangh - ensure we get all fields needed for member operations
+        const specializedSangh = await HierarchicalSangh.findById(sanghId);
+        if (!specializedSangh) {
+            return errorResponse(res, 'Sangh not found', 404);
+        }
+        
+        console.log('Specialized Sangh found:', specializedSangh.name);
+        console.log('Sangh type:', specializedSangh.sanghType);
+
+        // Check if it's a specialized Sangh
+        if (specializedSangh.sanghType === 'main') {
+            return errorResponse(res, 'This operation is only for specialized Sanghs', 400);
+        }
+
+        // Check if user is the president of this specialized Sangh
+        const isSpecializedSanghPresident = specializedSangh.officeBearers.some(
+            bearer => bearer.userId.toString() === userId.toString() && 
+                     bearer.role === 'president' && 
+                     bearer.status === 'active'
+        );
+
+        // If user is the president of the specialized Sangh, allow access
+        if (isSpecializedSanghPresident) {
+            req.sangh = specializedSangh;
+            return next();
+        }
+
+        // If not, check if user is the president of the parent main Sangh
+        if (specializedSangh.parentMainSangh) {
+            const mainSangh = await HierarchicalSangh.findById(specializedSangh.parentMainSangh);
+            
+            if (mainSangh) {
+                const isMainSanghPresident = mainSangh.officeBearers.some(
+                    bearer => bearer.userId.toString() === userId.toString() && 
+                             bearer.role === 'president' && 
+                             bearer.status === 'active'
+                );
+
+                if (isMainSanghPresident) {
+                    req.sangh = specializedSangh;
+                    return next();
+                }
+            }
+        }
+
+        return errorResponse(res, 'You must be either the president of this specialized Sangh or the president of its parent main Sangh', 403);
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
+    }
+});
+
+// Check if user can create specialized Sangh (either as main Sangh president or as specialized Sangh president)
+const canCreateSpecializedSangh = asyncHandler(async (req, res, next) => {
+    try {
+        const userId = req.user._id;
+        const { sanghType, level } = req.body;
+        
+        // If user is superadmin, grant full access
+        if (req.user.role === 'superadmin' || req.user.role === 'admin') {
+            return next();
+        }
+
+        // Validate sanghType
+        if (!['women', 'youth'].includes(sanghType)) {
+            return errorResponse(res, 'Invalid Sangh type. Must be "women" or "youth"', 400);
+        }
+
+        // First, check if user is a president of a specialized Sangh of the same type
+        const specializedSangh = await HierarchicalSangh.findOne({
+            'officeBearers': {
+                $elemMatch: {
+                    userId: userId,
+                    role: 'president',
+                    status: 'active'
+                }
+            },
+            'status': 'active',
+            'sanghType': sanghType
+        });
+        
+        if (specializedSangh) {
+            // Check if the specialized Sangh president has access to create the target level
+            if (!hasLevelAccess(specializedSangh.level, level)) {
+                return errorResponse(res, `As a ${specializedSangh.level} level president, you cannot create a ${level} level Sangh`, 403);
+            }
+            
+            // Store the specialized Sangh in the request for later use
+            req.parentSangh = specializedSangh;
+            return next();
+        }
+
+        // If not a specialized Sangh president, check if user is a main Sangh president
+        const mainSangh = await HierarchicalSangh.findOne({
+            'officeBearers': {
+                $elemMatch: {
+                    userId: userId,
+                    role: 'president',
+                    status: 'active'
+                }
+            },
+            'status': 'active',
+            'sanghType': 'main'
+        });
+        
+        if (!mainSangh) {
+            return errorResponse(res, 'You must be either a main Sangh president or a specialized Sangh president of the same type', 403);
+        }
+        
+        // Check if the main Sangh president has access to create the target level
+        if (!hasLevelAccess(mainSangh.level, level)) {
+            return errorResponse(res, `As a ${mainSangh.level} level president, you cannot create a ${level} level Sangh`, 403);
+        }
+        
+        // Store the main Sangh in the request for later use
+        req.parentSangh = mainSangh;
+        next();
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
+    }
+});
 
 module.exports = {
     isPresident,
@@ -403,5 +560,9 @@ module.exports = {
     canReviewJainAadharByLocation,
     canPostAsSangh,
     isPanchMember,
-    canManageAreaSangh
+    canManageAreaSangh,
+    isMainSanghPresident,
+    isSpecializedSanghPresident,
+    canManageSpecializedSangh,
+    canCreateSpecializedSangh
 };

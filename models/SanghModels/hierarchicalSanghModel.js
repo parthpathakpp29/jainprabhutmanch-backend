@@ -171,32 +171,20 @@ const hierarchicalSanghSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
+    },
+    sanghType: {
+        type: String,
+        enum: ['main', 'women', 'youth'],
+        default: 'main',
+        required: true
+    },
+    parentMainSangh: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'HierarchicalSangh',
+        default: null
     }
 }, {
     timestamps: true
-});
-
-// Generate unique access ID before saving
-hierarchicalSanghSchema.pre('save', async function(next) {
-    if (this.isNew && !this.accessId) {
-        const prefix = {
-            country: 'CNT',
-            state: 'ST',
-            district: 'DST',
-            city: 'CTY',
-            area: 'AREA'
-        }[this.level] || 'SNG';
-        
-        const timestamp = Date.now().toString().slice(-6);
-        const random = crypto.randomBytes(3).toString('hex').toUpperCase();
-        
-        this.accessId = `${prefix}-${timestamp}-${random}`;
-    }
-    // If sanghAccessId is undefined, set it to null explicitly
-    if (this.sanghAccessId === undefined) {
-        this.sanghAccessId = null;
-    }
-    next();
 });
 
 // Add validation methods and middleware here
@@ -266,11 +254,11 @@ hierarchicalSanghSchema.methods.getChildSanghs = async function() {
         .select('-members');
 };
 
-// Add indexes
-hierarchicalSanghSchema.index({ level: 1, status: 1 });
-hierarchicalSanghSchema.index({ parentSangh: 1 }); // status index is already covered above
-hierarchicalSanghSchema.index({ createdAt: -1 });
-// Use a sparse index for sanghAccessId to allow multiple null values
-hierarchicalSanghSchema.index({ sanghAccessId: 1 }, { sparse: true });
+// Optimize indexes for common query patterns
+hierarchicalSanghSchema.index({ level: 1, status: 1 }); // For filtering by level and status
+hierarchicalSanghSchema.index({ parentSangh: 1, status: 1 }); // For getting child Sanghs
+hierarchicalSanghSchema.index({ 'location.state': 1, 'location.district': 1, level: 1 }); // For location-based queries
+hierarchicalSanghSchema.index({ 'officeBearers.userId': 1 }); // For finding user's roles
+hierarchicalSanghSchema.index({ sanghAccessId: 1 }, { sparse: true }); // For access lookups
 
 module.exports = mongoose.model('HierarchicalSangh', hierarchicalSanghSchema); 

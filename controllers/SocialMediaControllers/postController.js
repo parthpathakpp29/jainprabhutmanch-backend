@@ -9,6 +9,12 @@ const { getIo } = require('../../websocket/socket');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
+ 
+const SanghPost = require('../../models/SanghModels/sanghPostModel');
+const PanchPost = require('../../models/SanghModels/panchPostModel');
+const VyaparPost = require('../../models/VyaparModels/vyaparPostModel');
+const TirthPost = require('../../models/TirthModels/tirthPostModel');
+const SadhuPost = require('../../models/SadhuModels/sadhuPostModel');
 
 // Create a post
 const createPost = [
@@ -493,60 +499,86 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
     
-    // Get regular user posts
-    const userPosts = await Post.find({ isHidden: false })
-      .populate('user', 'firstName lastName fullName profilePicture')
-      .sort('-createdAt')
-      .skip(skip)
-      .limit(limit);
-    
-    // Get Sangh posts
+    // Import all required post models
     const SanghPost = require('../../models/SanghModels/sanghPostModel');
-    const sanghPosts = await SanghPost.find({ isHidden: false })
-      .populate('sanghId', 'name level location')
-      .populate('postedByUserId', 'firstName lastName fullName profilePicture')
-      .sort('-createdAt')
-      .skip(skip)
-      .limit(limit);
-    
-    // Get Panch posts
     const PanchPost = require('../../models/SanghModels/panchPostModel');
-    const panchPosts = await PanchPost.find({ isHidden: false })
-      .populate('panchId', 'accessId')
-      .populate('sanghId', 'name level location')
-      .sort('-createdAt')
-      .skip(skip)
-      .limit(limit);
+    const VyaparPost = require('../../models/VyaparModels/vyaparPostModel');
+    const TirthPost = require('../../models/TirthModels/tirthPostModel');
+    const SadhuPost = require('../../models/SadhuModels/sadhuPostModel');
+    
+    // Get all posts from different models with Promise.all for parallel execution
+    const [userPosts, sanghPosts, panchPosts, vyaparPosts, tirthPosts, sadhuPosts] = await Promise.all([
+      // Regular user posts
+      Post.find({ isHidden: false })
+        .populate('user', 'firstName lastName profilePicture')
+        .sort('-createdAt')
+        .select('caption media user likes comments createdAt')
+        .lean(),
+      
+      // Sangh posts
+      SanghPost.find({ isHidden: false })
+        .populate('sanghId', 'name level location')
+        .populate('postedByUserId', 'firstName lastName fullName profilePicture')
+        .sort('-createdAt')
+        .select('caption media sanghId postedByUserId postedByRole likes comments createdAt')
+        .lean(),
+      
+      // Panch posts
+      PanchPost.find({ isHidden: false })
+        .populate('panchId', 'accessId')
+        .populate('sanghId', 'name level location')
+        .sort('-createdAt')
+        .select('caption media panchId sanghId postedByMemberId postedByName likes comments createdAt')
+        .lean(),
+        
+      // Vyapar posts
+      VyaparPost.find({ isHidden: false })
+        .populate('vyaparId', 'name businessType')
+        .populate('postedByUserId', 'firstName lastName fullName profilePicture')
+        .sort('-createdAt')
+        .select('caption media vyaparId postedByUserId likes comments createdAt')
+        .lean(),
+        
+      // Tirth posts
+      TirthPost.find({ isHidden: false })
+        .populate('tirthId', 'name location')
+        .populate('postedByUserId', 'firstName lastName fullName profilePicture')
+        .sort('-createdAt')
+        .select('caption media tirthId postedByUserId likes comments createdAt')
+        .lean(),
+        
+      // Sadhu posts
+      SadhuPost.find({ isHidden: false })
+        .populate('sadhuId', 'sadhuName uploadImage')
+        .populate('postedByUserId', 'firstName lastName fullName profilePicture')
+        .sort('-createdAt')
+        .select('caption media sadhuId postedByUserId likes comments createdAt')
+        .lean()
+    ]);
     
     // Add post type for frontend differentiation
-    const userPostsWithType = userPosts.map(post => ({
-      ...post.toObject(),
-      postType: 'user'
-    }));
+    const postsWithTypes = [
+      ...userPosts.map(post => ({ ...post, postType: 'user' })),
+      ...sanghPosts.map(post => ({ ...post, postType: 'sangh' })),
+      ...panchPosts.map(post => ({ ...post, postType: 'panch' })),
+      ...vyaparPosts.map(post => ({ ...post, postType: 'vyapar' })),
+      ...tirthPosts.map(post => ({ ...post, postType: 'tirth' })),
+      ...sadhuPosts.map(post => ({ ...post, postType: 'sadhu' }))
+    ];
     
-    const sanghPostsWithType = sanghPosts.map(post => ({
-      ...post.toObject(),
-      postType: 'sangh'
-    }));
-    
-    const panchPostsWithType = panchPosts.map(post => ({
-      ...post.toObject(),
-      postType: 'panch'
-    }));
-    
-    // Combine and sort by creation date
-    const combinedPosts = [...userPostsWithType, ...sanghPostsWithType, ...panchPostsWithType].sort((a, b) => 
+    // Sort all posts by creation date
+    const sortedPosts = postsWithTypes.sort((a, b) => 
       new Date(b.createdAt) - new Date(a.createdAt)
-    ).slice(0, limit);
+    );
     
-    // Get total counts for pagination
-    const totalUserPosts = await Post.countDocuments({ isHidden: false });
-    const totalSanghPosts = await SanghPost.countDocuments({ isHidden: false });
-    const totalPanchPosts = await PanchPost.countDocuments({ isHidden: false });
-    const totalPosts = totalUserPosts + totalSanghPosts + totalPanchPosts;
+    // Apply pagination after combining all posts
+    const paginatedPosts = sortedPosts.slice(skip, skip + limit);
+    
+    // Get total count for pagination
+    const totalPosts = sortedPosts.length;
     
     return successResponse(res, {
-      posts: combinedPosts,
+      posts: paginatedPosts,
       pagination: {
         total: totalPosts,
         page,
@@ -554,6 +586,109 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
       }
     }, 'Combined feed retrieved successfully');
   } catch (error) {
+    console.error('Error in getCombinedFeed:', error);
+    return errorResponse(res, 'Error retrieving combined feed', 500, error.message);
+  }
+});
+
+// Optimized version of combined feed with cursor-based pagination
+const getCombinedFeedOptimized = asyncHandler(async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    const cursor = req.query.cursor; // timestamp of the oldest post in the previous batch
+  
+    
+    // Build query based on cursor
+    const cursorQuery = cursor ? { createdAt: { $lt: new Date(cursor) } } : {};
+    
+    // Get posts from each model with the cursor filter
+    const [userPosts, sanghPosts, panchPosts, vyaparPosts, tirthPosts, sadhuPosts] = await Promise.all([
+      // Regular user posts
+      Post.find({ ...cursorQuery, isHidden: false })
+        .populate('user', 'firstName lastName profilePicture')
+        .sort('-createdAt')
+        .select('caption media user likes comments createdAt')
+        .limit(limit)
+        .lean(),
+      
+      // Sangh posts
+      SanghPost.find({ ...cursorQuery, isHidden: false })
+        .populate('sanghId', 'name level location')
+        .populate('postedByUserId', 'firstName lastName fullName profilePicture')
+        .sort('-createdAt')
+        .select('caption media sanghId postedByUserId postedByRole likes comments createdAt')
+        .limit(limit)
+        .lean(),
+      
+      // Panch posts
+      PanchPost.find({ ...cursorQuery, isHidden: false })
+        .populate('panchId', 'accessId')
+        .populate('sanghId', 'name level location')
+        .sort('-createdAt')
+        .select('caption media panchId sanghId postedByMemberId postedByName likes comments createdAt')
+        .limit(limit)
+        .lean(),
+        
+      // Vyapar posts
+      VyaparPost.find({ ...cursorQuery, isHidden: false })
+        .populate('vyaparId', 'name businessType')
+        .populate('postedByUserId', 'firstName lastName fullName profilePicture')
+        .sort('-createdAt')
+        .select('caption media vyaparId postedByUserId likes comments createdAt')
+        .limit(limit)
+        .lean(),
+        
+      // Tirth posts
+      TirthPost.find({ ...cursorQuery, isHidden: false })
+        .populate('tirthId', 'name location')
+        .populate('postedByUserId', 'firstName lastName fullName profilePicture')
+        .sort('-createdAt')
+        .select('caption media tirthId postedByUserId likes comments createdAt')
+        .limit(limit)
+        .lean(),
+        
+      // Sadhu posts
+      SadhuPost.find({ ...cursorQuery, isHidden: false })
+        .populate('sadhuId', 'sadhuName uploadImage')
+        .populate('postedByUserId', 'firstName lastName fullName profilePicture')
+        .sort('-createdAt')
+        .select('caption media sadhuId postedByUserId likes comments createdAt')
+        .limit(limit)
+        .lean()
+    ]);
+    
+    // Add post type for frontend differentiation
+    const postsWithTypes = [
+      ...userPosts.map(post => ({ ...post, postType: 'user' })),
+      ...sanghPosts.map(post => ({ ...post, postType: 'sangh' })),
+      ...panchPosts.map(post => ({ ...post, postType: 'panch' })),
+      ...vyaparPosts.map(post => ({ ...post, postType: 'vyapar' })),
+      ...tirthPosts.map(post => ({ ...post, postType: 'tirth' })),
+      ...sadhuPosts.map(post => ({ ...post, postType: 'sadhu' }))
+    ];
+    
+    // Sort all posts by creation date
+    const sortedPosts = postsWithTypes.sort((a, b) => 
+      new Date(b.createdAt) - new Date(a.createdAt)
+    ).slice(0, limit);
+    
+    // Get the next cursor (timestamp of the oldest post)
+    const nextCursor = sortedPosts.length > 0 
+      ? sortedPosts[sortedPosts.length - 1].createdAt.toISOString() 
+      : null;
+    
+    // Check if there are more posts
+    const hasMore = sortedPosts.length === limit;
+    
+    return successResponse(res, {
+      posts: sortedPosts,
+      pagination: {
+        nextCursor,
+        hasMore
+      }
+    }, 'Combined feed retrieved successfully');
+  } catch (error) {
+    console.error('Error in getCombinedFeedOptimized:', error);
     return errorResponse(res, 'Error retrieving combined feed', 500, error.message);
   }
 });
@@ -572,5 +707,6 @@ module.exports = {
   hidePost,
   unhidePost,
   deleteMediaItem,
-  getCombinedFeed
+  getCombinedFeed,
+  getCombinedFeedOptimized
 };

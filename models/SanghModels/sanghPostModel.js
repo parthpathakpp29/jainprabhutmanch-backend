@@ -1,9 +1,51 @@
 const mongoose = require('mongoose');
 
+// Create a reusable reply schema
+const replySchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  text: {
+    type: String,
+    required: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+}, { _id: true });
+
+// Create a reusable comment schema
+const commentSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  text: {
+    type: String,
+    required: true,
+    maxlength: [500, 'Comment cannot exceed 500 characters']
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  replies: [replySchema]
+}, { _id: true });
+
 const sanghPostSchema = new mongoose.Schema({
   sanghId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'HierarchicalSangh',
+    required: true
+  },
+  sanghType: {
+    type: String,
+    enum: ['main', 'women', 'youth'],
+    default: 'main',
     required: true
   },
   postedByUserId: {
@@ -16,11 +58,11 @@ const sanghPostSchema = new mongoose.Schema({
     enum: ['president', 'secretary', 'treasurer'],
     required: true
   },
-  content: {
+  caption: {
     type: String,
     required: true,
     trim: true,
-    maxlength: [2000, 'Content cannot exceed 2000 characters']
+    maxlength: [2000, 'Caption cannot exceed 2000 characters']
   },
   media: [{
     url: {
@@ -37,22 +79,7 @@ const sanghPostSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
-  comments: [{
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true
-    },
-    text: {
-      type: String,
-      required: true,
-      maxlength: [500, 'Comment cannot exceed 500 characters']
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now
-    }
-  }],
+  comments: [commentSchema],
   isHidden: {
     type: Boolean,
     default: false
@@ -99,11 +126,12 @@ sanghPostSchema.methods.addComment = function(userId, text) {
   const comment = {
     user: userId,
     text,
-    createdAt: new Date()
+    createdAt: new Date(),
+    replies: []
   };
 
   this.comments.push(comment);
   return comment;
 };
 
-module.exports = mongoose.model('SanghPost', sanghPostSchema); 
+module.exports = mongoose.model('SanghPost', sanghPostSchema);

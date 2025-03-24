@@ -13,7 +13,8 @@ const {
   hidePost,
   unhidePost,
   deleteMediaItem,
-  getCombinedFeed
+  getCombinedFeed,
+  getCombinedFeedOptimized
 } = require('../../controllers/SocialMediaControllers/postController');
 const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const { check, param } = require('express-validator');
@@ -52,6 +53,9 @@ router.get('/', getAllPosts);
 
 // Get combined feed of user posts and Sangh posts
 router.get('/combined-feed', getCombinedFeed);
+
+// Get optimized combined feed with cursor-based pagination
+router.get('/combined-feed-optimized', getCombinedFeedOptimized);
 
 router.get('/:postId', [
   param('postId').isMongoId().withMessage('Invalid post ID')
@@ -100,14 +104,14 @@ router.get('/comments/:commentId/replies', [
 ], getReplies);
 
 // Visibility routes
-router.put('/:postId/hide', [
-  param('postId').isMongoId().withMessage('Invalid post ID'),
-  check('userId').notEmpty().isMongoId().withMessage('User ID is required')
-], hidePost);
+// router.put('/:postId/hide', [
+//   param('postId').isMongoId().withMessage('Invalid post ID'),
+//   check('userId').notEmpty().isMongoId().withMessage('User ID is required')
+// ], hidePost);
 
-router.put('/:postId/unhide', [
-  param('postId').isMongoId().withMessage('Invalid post ID'),
-  check('userId').notEmpty().isMongoId().withMessage('User ID is required')
-], unhidePost);
+// router.put('/:postId/unhide', [
+//   param('postId').isMongoId().withMessage('Invalid post ID'),
+//   check('userId').notEmpty().isMongoId().withMessage('User ID is required')
+// ], unhidePost);
 
 module.exports = router;

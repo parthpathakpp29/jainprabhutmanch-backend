@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, isSuperAdmin } = require('../../middlewares/authMiddlewares');
-const { validateSanghAccess, canCreateLowerLevelSangh, validateLocationHierarchy } = require('../../middlewares/sanghAuthMiddleware');
-const { isOfficeBearer, canManageAreaSangh } = require('../../middlewares/sanghPermissions');
+const { validateSanghAccess, canCreateLowerLevelSangh, validateLocationHierarchy, checkSanghCreationPermission } = require('../../middlewares/sanghAuthMiddleware');
+const { isOfficeBearer, canManageAreaSangh, isMainSanghPresident, canManageSpecializedSangh, canCreateSpecializedSangh } = require('../../middlewares/sanghPermissions');
 const {
     createHierarchicalSangh,
     getHierarchy,
@@ -14,86 +14,16 @@ const {
     updateMemberDetails,
     getSanghMembers,
     addMultipleSanghMembers,
-    checkOfficeBearerTerms
+    checkOfficeBearerTerms,
+    createSpecializedSangh,
+    getSpecializedSanghs,
+    updateSpecializedSangh
 } = require('../../controllers/SanghControllers/hierarchicalSanghController');
 
 const upload = require('../../middlewares/uploadMiddleware');
 
 // Protect all routes
 router.use(authMiddleware);
-
-// Helper middleware to check if user can create a Sangh
-const checkSanghCreationPermission = async (req, res, next) => {
-    try {
-        // Superadmins can create any Sangh
-        if (req.user.role === 'superadmin') {
-            return next();
-        }
-        
-        // Country-level presidents can create state-level Sanghs
-        const userRole = req.user.sanghRoles.find(role => 
-            role.role === 'president' && role.level === 'country'
-        );
-        
-        if (userRole && req.body.level !== 'country') {
-            // For non-country level Sanghs, set up the parent Sangh access
-            const parentSanghId = req.body.parentSanghId || req.body.parentSangh;
-            
-            if (parentSanghId) {
-                const SanghAccess = require('../../models/SanghModels/sanghAccessModel');
-                const mongoose = require('mongoose');
-                
-                // If parentSanghAccessId is provided directly
-                if (req.body.parentSanghAccessId) {
-                    // Check if it's a valid ObjectId
-                    if (mongoose.Types.ObjectId.isValid(req.body.parentSanghAccessId)) {
-                        const parentSanghAccess = await SanghAccess.findById(req.body.parentSanghAccessId);
-                        if (parentSanghAccess) {
-                            req.sanghAccess = parentSanghAccess;
-                            return next();
-                        }
-                    } else {
-                        // It might be an access code string
-                        const parentSanghAccess = await SanghAccess.findOne({ 
-                            accessId: req.body.parentSanghAccessId,
-                            status: 'active'
-                        });
-                        
-                        if (parentSanghAccess) {
-                            req.sanghAccess = parentSanghAccess;
-                            return next();
-                        }
-                    }
-                }
-                
-                // If no valid parentSanghAccessId was found, try to find by sanghId
-                const parentSanghAccess = await SanghAccess.findOne({ 
-                    sanghId: parentSanghId,
-                    status: 'active'
-                });
-                
-                if (!parentSanghAccess) {
-                    return res.status(404).json({
-                        success: false,
-                        message: 'Parent Sangh access not found'
-                    });
-                }
-                
-                req.sanghAccess = parentSanghAccess;
-            }
-            return next();
-        }
-        
-        // For other users, check if they can create a lower level Sangh
-        canCreateLowerLevelSangh(req, res, next);
-    } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: 'Error checking Sangh creation permission',
-            error: error.message
-        });
-    }
-};
 
 // Create new Sangh (Protected + Requires ability to create lower level)
 router.post('/create', 
@@ -196,6 +126,62 @@ router.delete('/area/:sanghId/members/:memberId',
     authMiddleware,
     canManageAreaSangh,
     removeSanghMember
+);
+
+// Create specialized Sangh (Women/Youth) - For both main Sangh presidents and specialized Sangh presidents
+router.post('/create-specialized-sangh', 
+    authMiddleware,
+    upload.sangathanDocs,
+    canCreateSpecializedSangh,
+    createSpecializedSangh
+);
+
+// Get specialized Sanghs for a main Sangh
+router.get('/:sanghId/specialized-sanghs',
+    validateSanghAccess,
+    getSpecializedSanghs
+);
+
+// Update specialized Sangh - Accessible by both specialized Sangh president and parent main Sangh president
+router.put('/specialized/:sanghId',
+    authMiddleware,
+    canManageSpecializedSangh,
+    upload.sangathanDocs,
+    updateSpecializedSangh
+);
+
+// Specialized Sangh member management routes
+router.post('/specialized/:sanghId/members',
+    authMiddleware,
+    canManageSpecializedSangh,
+    upload.fields([
+        { name: 'memberJainAadhar', maxCount: 1 },
+        { name: 'memberPhoto', maxCount: 1 }
+    ]),
+    addSanghMember
+);
+
+router.post('/specialized/:sanghId/members/bulk',
+    authMiddleware,
+    canManageSpecializedSangh,
+    addMultipleSanghMembers
+);
+
+router.delete('/specialized/:sanghId/members/:memberId',
+    authMiddleware,
+    canManageSpecializedSangh,
+    removeSanghMember
+);
+
+// Add route for updating member details in specialized Sanghs
+router.put('/specialized/:sanghId/members/:memberId',
+    authMiddleware,
+    canManageSpecializedSangh,
+    upload.fields([
+        { name: 'memberJainAadhar', maxCount: 1 },
+        { name: 'memberPhoto', maxCount: 1 }
+    ]),
+    updateMemberDetails
 );
 
 module.exports = router; 

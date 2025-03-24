@@ -15,12 +15,6 @@ const jainAdharRouter = require('./routes/UserRegistrationRoutes/jainAdharRoute'
 const friendshipRoutes = require('./routes/SocialMediaRoutes/friendshipRoutes');
 const postRoutes = require('./routes/SocialMediaRoutes/postRoutes');
 const messageRoutes = require('./routes/SocialMediaRoutes/messageRoutes');
-const jainVyaparRoutes = require('./routes/jainVyaparRoutes');
-const tirthSanrakshanRoute = require('./routes/TirthSanrakshanRoute');
-const sadhuInfoRoutes = require('./routes/sadhuInfoRoutes');
-const tirthIdPasswordRoutes = require('./routes/tirthIdPasswordRoutes');
-const jainVyaparRoute = require('./routes/JainVyaparIdPassRoutes');
-const sadhuRoutes = require('./routes/sadhuRoutes');
 const biodataRoutes = require('./routes/biodataRoutes');
 const groupChatRoutes = require('./routes/SocialMediaRoutes/groupChatRoutes');
 const rojgarRoutes = require('./routes/rojgarRoute');
@@ -36,21 +30,28 @@ const s3Client = require('./config/s3Config');
 const { initializeWebSocket, getIo } = require('./websocket/socket');
 const { scheduleStoryCleanup } = require('./jobs/storyCleanupJob');
 const hierarchicalSanghRoutes = require('./routes/SanghRoutes/hierarchicalSanghRoute');
-const sanghAccessRoutes = require('./routes/SanghRoutes/sanghAccessRoute');
 const sanghPostRoutes = require('./routes/SanghRoutes/sanghPostRoutes');
 const panchPostRoutes = require('./routes/SanghRoutes/panchPostRoutes');
+const panchRoutes = require('./routes/SanghRoutes/panchRoutes');
 
-const sanghRoutes = require('./routes/SanghRoutes/sanghRoute');
-// Comment out fee routes
-// const feeRoutes = require('./routes/SanghRoutes/feeRoutes');
-const panchayatRoutes = require('./routes/SanghRoutes/panchRoutes');
+// Import JainVyapar routes
+const vyaparRoutes = require('./routes/VyaparRoutes/vyaparRoutes');
+const vyaparPostRoutes = require('./routes/VyaparRoutes/vyaparPostRoutes');
+
 const locationRoutes = require('./routes/locationRoutes');
+
+// Import Tirth routes
+const tirthRoutes = require('./routes/TirthRoutes/tirthRoutes');
+const tirthPostRoutes = require('./routes/TirthRoutes/tirthPostRoutes');
+
+const sadhuRoutes = require('./routes/SadhuRoutes/sadhuRoutes');
+const sadhuPostRoutes = require('./routes/SadhuRoutes/sadhuPostRoutes');
 
 dbConnect();
 
 // Middleware
 app.use(cors({
-  origin: "*",  // This allows your React Native app to connect
+  origin: "*",
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   credentials: true
 }));
@@ -70,13 +71,26 @@ app.use('/api/notification', authMiddleware, notificationRoutes);
 app.use("/api/messages", authMiddleware, messageRoutes);
 app.use("/api/group-chats", authMiddleware, groupChatRoutes);
 
+// JainVyapar routes
+app.use("/api/vyapar", authMiddleware, vyaparRoutes);
+app.use("/api/vyapar/posts", authMiddleware, vyaparPostRoutes);
+
+// Tirth routes
+app.use('/api/tirth', authMiddleware, tirthRoutes);
+app.use('/api/tirth/posts', authMiddleware, tirthPostRoutes);
+
+// Sangh routes
+app.use('/api/hierarchical-sangh', hierarchicalSanghRoutes);
+app.use('/api/sangh-posts', sanghPostRoutes);
+app.use('/api/panch/',panchRoutes)
+app.use('/api/panch-posts', panchPostRoutes);
+app.use('/api/location', locationRoutes);
+
+// Sadhu routes
+app.use('/api/sadhu', sadhuRoutes);
+app.use('/api/sadhu/posts', sadhuPostRoutes);
+
 // Admin protected routes
-app.use("/api/jainvyapar", [authMiddleware, isAdmin], jainVyaparRoutes);
-app.use("/api/tirthsanrakshan", [authMiddleware, isAdmin], tirthSanrakshanRoute);
-app.use("/api/sadhuinfo", [authMiddleware, isAdmin], sadhuInfoRoutes);
-app.use("/api/tirthidpassword", [authMiddleware, isAdmin], tirthIdPasswordRoutes);
-app.use("/api/jainvyaparidpassword", [authMiddleware, isAdmin], jainVyaparRoute);
-app.use("/api/sadhu", [authMiddleware, isAdmin], sadhuRoutes);
 app.use("/api/biodata", [authMiddleware, isAdmin], biodataRoutes);
 app.use("/api/rojgar", [authMiddleware, isAdmin], rojgarRoutes);
 app.use("/api/reporting", [authMiddleware, isAdmin], reportingRoutes);
@@ -85,41 +99,21 @@ app.use("/api/granth", [authMiddleware, isAdmin], granthRoutes);
 app.use("/api/jainitihas", [authMiddleware, isAdmin], jainItihasRoutes);
 app.use('/api/yojana', [authMiddleware, isAdmin], govtYojanaRoutes);
 
-// For Future
-// app.use('/api/sangh', [authMiddleware, isSuperAdmin], sanghRoutes);
-// app.use('/api/panch', [authMiddleware, isSuperAdmin], panchayatRoutes);
 
-
-app.use('/api/hierarchical-sangh', authMiddleware, hierarchicalSanghRoutes);
-app.use('/api/sangh-access', authMiddleware, sanghAccessRoutes);
-app.use('/api/sangh-posts', authMiddleware, sanghPostRoutes);
-app.use('/api/panch', authMiddleware, panchayatRoutes);
-app.use('/api/panch-posts', authMiddleware, panchPostRoutes);
-app.use('/api/locations', locationRoutes);
-
-// Health check route
-app.get('/api/health', (req, res) => {
-  res.status(200).json({
-    status: 'healthy',
-    environment: process.env.NODE_ENV,
-    timestamp: new Date().toISOString()
-  });
-});
 
 // Error handling
 app.use(notFound);
 app.use(errorHandler);
 
-// Create HTTP server
+// Initialize WebSocket
 const server = http.createServer(app);
+initializeWebSocket(server);
 
-const io = initializeWebSocket(server);
-app.set('socketio', io);
-
-// Start the job scheduler
+// Schedule story cleanup job
 scheduleStoryCleanup();
 
-// Start server
 server.listen(PORT, () => {
-  console.log(`Server is running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+    console.log(`Server is running at PORT ${PORT}`);
 });
+
+module.exports = { app, server };

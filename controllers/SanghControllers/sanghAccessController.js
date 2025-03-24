@@ -7,7 +7,7 @@ const { successResponse, errorResponse } = require('../../utils/apiResponse');
 // Generate Sangh Access for new Sangh
 const generateSanghAccess = asyncHandler(async (req, res) => {
     try {
-        const { sanghId, level, location } = req.body;
+        const { sanghId, level, location, sanghType } = req.body;
         const userId = req.user._id;
 
         // Validate if Sangh exists using HierarchicalSangh model
@@ -67,6 +67,7 @@ const generateSanghAccess = asyncHandler(async (req, res) => {
             sanghId,
             level,
             location,
+            sanghType,
             createdBy: userId,
             parentSanghAccess: req.body.parentSanghAccess
         });

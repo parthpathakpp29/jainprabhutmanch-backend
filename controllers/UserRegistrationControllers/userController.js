@@ -123,11 +123,20 @@ const loginUser = [
             delete userResponse.password;
             delete userResponse.__v;
 
+            // Prepare role information for the response
+            const roleInfo = {
+                hasSanghRoles: user.sanghRoles && user.sanghRoles.length > 0,
+                hasPanchRoles: user.panchRoles && user.panchRoles.length > 0,
+                hasTirthRoles: user.tirthRoles && user.tirthRoles.length > 0,
+                hasVyaparRoles: user.vyaparRoles && user.vyaparRoles.length > 0
+            };
+
             return successResponse(
                 res, 
                 {
                     user: userResponse,
-                    token: token
+                    token: token,
+                    roles: roleInfo
                 },
                 "Login successful",
                 200

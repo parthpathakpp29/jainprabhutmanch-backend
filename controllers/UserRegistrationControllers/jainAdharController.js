@@ -350,7 +350,8 @@ const getApplicationsForReview = asyncHandler(async (req, res) => {
         // For country president - can review all country-level applications
         if (reviewerLevel === 'country') {
             const applications = await JainAadhar.find({
-                applicationLevel: 'superadmin',  // Country applications are routed to superadmin
+                // applicationLevel:'superadmin'
+                applicationLevel: 'country',  
                 status: 'pending'
             })
             .populate('userId')
@@ -558,7 +559,55 @@ const verifyLocationAuthority = (sangh, application) => {
 // Admin: Get detailed application statistics
 const getApplicationStats = asyncHandler(async (req, res) => {
   try {
+    // Get user's highest level Sangh role
+    const userSanghRole = req.user.sanghRoles.reduce((highest, role) => {
+      const levelHierarchy = ['area', 'city', 'district', 'state', 'country'];
+      const currentIndex = levelHierarchy.indexOf(role.level);
+      const highestIndex = levelHierarchy.indexOf(highest?.level || '');
+      return currentIndex > highestIndex ? role : highest;
+    }, null);
+
+    if (!userSanghRole) {
+      return errorResponse(res, 'No Sangh role found', 403);
+    }
+
+    // Build location query based on user's role
+    const locationQuery = {};
+    const { location } = await HierarchicalSangh.findById(userSanghRole.sanghId);
+
+    // Add location filters based on user's level
+    if (location) {
+      if (userSanghRole.level === 'country') {
+        locationQuery['location.country'] = location.country;
+      } else if (userSanghRole.level === 'state') {
+        locationQuery['location.country'] = location.country;
+        locationQuery['location.state'] = location.state;
+      } else if (userSanghRole.level === 'district') {
+        locationQuery['location.country'] = location.country;
+        locationQuery['location.state'] = location.state;
+        locationQuery['location.district'] = location.district;
+      } else if (userSanghRole.level === 'city') {
+        locationQuery['location.country'] = location.country;
+        locationQuery['location.state'] = location.state;
+        locationQuery['location.district'] = location.district;
+        locationQuery['location.city'] = location.city;
+      } else if (userSanghRole.level === 'area') {
+        locationQuery['location.country'] = location.country;
+        locationQuery['location.state'] = location.state;
+        locationQuery['location.district'] = location.district;
+        locationQuery['location.city'] = location.city;
+        locationQuery['location.area'] = location.area;
+      }
+    }
+
+    // Get applications stats with location filter
     const stats = await JainAadhar.aggregate([
+      {
+        $match: {
+          ...locationQuery,
+          applicationLevel: { $gte: userSanghRole.level }
+        }
+      },
       {
         $group: {
           _id: '$status',
@@ -572,12 +621,16 @@ const getApplicationStats = asyncHandler(async (req, res) => {
     todayStart.setHours(0, 0, 0, 0);
 
     const todayStats = await JainAadhar.countDocuments({
+      ...locationQuery,
+      applicationLevel: { $gte: userSanghRole.level },
       createdAt: { $gte: todayStart }
     });
 
     return successResponse(res, {
       overall: stats,
-      today: todayStats
+      today: todayStats,
+      userLevel: userSanghRole.level,
+      locationScope: location
     }, 'Application statistics retrieved successfully');
   } catch (error) {
     return errorResponse(res, 'Error fetching statistics', 500, error.message);

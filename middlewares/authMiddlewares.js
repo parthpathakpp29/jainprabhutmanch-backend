@@ -2,6 +2,7 @@ const User = require('../models/UserRegistrationModels/userModel');
 const jwt = require("jsonwebtoken");
 const asyncHandler = require("express-async-handler");
 const dotenv = require("dotenv").config();
+const Sadhu = require('../models/SadhuModels/sadhuModel');
 
 // Log middleware function
 const logMiddleware = (req, res, next) => {
@@ -176,12 +177,168 @@ const checkAccess = asyncHandler(async (req, res, next) => {
     });
 });
 
+// Verify Sangh role middleware
+const verifySanghRole = asyncHandler(async (req, res, next) => {
+    const user = req.user;
+    const sanghId = req.params.sanghId || req.params.id;
+    
+    // If user is superadmin, grant full access
+    if (user.role === 'superadmin' || user.role === 'admin') {
+        return next();
+    }
+    
+    // Check if user has any Sangh role for this Sangh
+    const hasSanghRole = user.sanghRoles && user.sanghRoles.some(role => 
+        role.sanghId.toString() === sanghId
+    );
+    
+    if (!hasSanghRole) {
+        return res.status(403).json({
+            success: false,
+            message: 'You do not have permission to access this Sangh'
+        });
+    }
+    
+    next();
+});
+
+// Verify Panch role middleware
+const verifyPanchRole = asyncHandler(async (req, res, next) => {
+    const user = req.user;
+    const panchId = req.params.panchId || req.params.id;
+    
+    // If user is superadmin, grant full access
+    if (user.role === 'superadmin' || user.role === 'admin') {
+        return next();
+    }
+    
+    // Check if user has any Panch role for this Panch
+    const hasPanchRole = user.panchRoles && user.panchRoles.some(role => 
+        role.panchId.toString() === panchId
+    );
+    
+    if (!hasPanchRole) {
+        return res.status(403).json({
+            success: false,
+            message: 'You do not have permission to access this Panch'
+        });
+    }
+    
+    next();
+});
+
+// Verify Tirth role middleware
+const verifyTirthRole = asyncHandler(async (req, res, next) => {
+    const user = req.user;
+    const tirthId = req.params.tirthId;
+    
+    // If user is superadmin, grant full access
+    if (user.role === 'superadmin' || user.role === 'admin') {
+        return next();
+    }
+    
+    // Check if user has any Tirth role for this Tirth
+    const hasTirthRole = user.tirthRoles && user.tirthRoles.some(role => 
+        role.tirthId.toString() === tirthId
+    );
+    
+    if (!hasTirthRole) {
+        return res.status(403).json({
+            success: false,
+            message: 'You do not have permission to access this Tirth'
+        });
+    }
+    
+    next();
+});
+
+// Verify Vyapar role middleware
+const verifyVyaparRole = asyncHandler(async (req, res, next) => {
+    const user = req.user;
+    const vyaparId = req.params.vyaparId;
+    
+    // If user is superadmin, grant full access
+    if (user.role === 'superadmin' || user.role === 'admin') {
+        return next();
+    }
+    
+    // Check if user has any Vyapar role for this Vyapar
+    const hasVyaparRole = user.vyaparRoles && user.vyaparRoles.some(role => 
+        role.vyaparId.toString() === vyaparId
+    );
+    
+    if (!hasVyaparRole) {
+        return res.status(403).json({
+            success: false,
+            message: 'You do not have permission to access this business'
+        });
+    }
+    
+    next();
+});
+
+// Verify if user has sadhu role
+const verifySadhuRole = asyncHandler(async (req, res, next) => {
+    try {
+        const { sadhuId } = req.params;
+        const user = req.user;
+        
+        // If user is superadmin or admin, grant full access
+        if (user.role === 'superadmin' || user.role === 'admin') {
+            const sadhu = await Sadhu.findById(sadhuId);
+            if (!sadhu) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Sadhu not found'
+                });
+            }
+            req.sadhu = sadhu;
+            return next();
+        }
+        
+        // Check if user has any role for this sadhu
+        const hasSadhuRole = user.sadhuRoles && user.sadhuRoles.some(role => 
+            role.sadhuId.toString() === sadhuId && 
+            ['owner', 'manager', 'admin'].includes(role.role)
+        );
+        
+        if (!hasSadhuRole) {
+            return res.status(403).json({
+                success: false,
+                message: 'You do not have permission to access this sadhu profile'
+            });
+        }
+        
+        const sadhu = await Sadhu.findById(sadhuId);
+        if (!sadhu) {
+            return res.status(404).json({
+                success: false,
+                message: 'Sadhu not found'
+            });
+        }
+        
+        req.sadhu = sadhu;
+        next();
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: error.message
+        });
+    }
+});
+
 module.exports = {
     logMiddleware,
-    authMiddleware,
     authenticate,
+    authMiddleware,
     isAdmin,
     isSuperAdmin,
     canReviewJainAadhar,
-    checkAccess
+    checkAccess,
+    verifySanghRole,
+    verifyPanchRole,
+    verifyTirthRole,
+    verifyVyaparRole,
+    verifySadhuRole
 };

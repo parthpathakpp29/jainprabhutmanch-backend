@@ -7,7 +7,13 @@ const {
   toggleLikePanchPost,
   commentOnPanchPost,
   deletePanchPost,
-  getPanchMemberAccessKey
+  updatePanchPost,
+
+  addReplyToPanchPost,
+  getRepliesForPanchPost,
+  deleteMediaItemFromPanchPost,
+  hidePanchPost,
+  unhidePanchPost
 } = require('../../controllers/SanghControllers/panchPostController');
 const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const { isPanchMember } = require('../../middlewares/sanghPermissions');
@@ -17,26 +23,14 @@ const { body, param } = require('express-validator');
 // Protected routes
 router.use(authMiddleware);
 
-// Get Panch member access key
+// Create post as Panch member (only active members)
 router.post(
-  '/access-key',
-  [
-    body('panchId').isMongoId().withMessage('Invalid Panch ID'),
-    body('jainAadharNumber').notEmpty().withMessage('Jain Aadhar number is required')
-  ],
-  getPanchMemberAccessKey
-);
-
-// Create post as Panch member
-router.post(
-  '/posts',
-  upload.fields([{ name: 'media', maxCount: 10 }]),
+  '/:panchId/posts',
   isPanchMember,
+  upload.fields([{ name: 'media', maxCount: 10 }]),
   [
-    body('content').notEmpty().withMessage('Content is required')
-      .isLength({ max: 2000 }).withMessage('Content cannot exceed 2000 characters'),
-    body('panchId').isMongoId().withMessage('Invalid Panch ID'),
-    body('accessKey').notEmpty().withMessage('Access key is required')
+    body('caption').notEmpty().withMessage('Caption is required')
+      .isLength({ max: 2000 }).withMessage('Caption cannot exceed 2000 characters')
   ],
   createPanchPost
 );
@@ -76,16 +70,78 @@ router.post(
   commentOnPanchPost
 );
 
+// Reply to a comment
+router.post(
+  '/comments/reply',
+  [
+    body('commentId').isMongoId().withMessage('Invalid comment ID'),
+    body('replyText').notEmpty().withMessage('Reply text is required')
+      .isLength({ max: 500 }).withMessage('Reply cannot exceed 500 characters')
+  ],
+  addReplyToPanchPost
+);
+
+// Get replies for a comment
+router.get(
+  '/comments/:commentId/replies',
+  [
+    param('commentId').isMongoId().withMessage('Invalid comment ID')
+  ],
+  getRepliesForPanchPost
+);
+
 // Delete a Panch post
 router.delete(
   '/posts/:postId',
-  isPanchMember,
+ isPanchMember,
   [
-    param('postId').isMongoId().withMessage('Invalid post ID'),
-    body('panchId').isMongoId().withMessage('Invalid Panch ID'),
-    body('accessKey').notEmpty().withMessage('Access key is required')
+    param('postId').isMongoId().withMessage('Invalid post ID')
   ],
   deletePanchPost
 );
+
+// Update a Panch post
+router.put(
+  '/posts/:postId',
+  isPanchMember,
+  upload.fields([{ name: 'media', maxCount: 10 }]),
+  [
+    param('postId').isMongoId().withMessage('Invalid post ID'),
+    body('caption').notEmpty().withMessage('Caption is required')
+      .isLength({ max: 2000 }).withMessage('Caption cannot exceed 2000 characters')
+  ],
+  updatePanchPost
+);
+
+// Delete a specific media item from a post
+router.delete(
+  '/posts/:postId/media/:mediaId',
+  isPanchMember,
+  [
+    param('postId').isMongoId().withMessage('Invalid post ID'),
+    param('mediaId').isMongoId().withMessage('Invalid media ID')
+  ],
+  deleteMediaItemFromPanchPost
+);
+
+// Hide/unhide post routes
+router.put(
+  '/posts/:postId/hide',
+  isPanchMember,
+  [
+    param('postId').isMongoId().withMessage('Invalid post ID')
+  ],
+  hidePanchPost
+);
+
+router.put(
+  '/posts/:postId/unhide',
+  isPanchMember,
+  [
+    param('postId').isMongoId().withMessage('Invalid post ID')
+  ],
+  unhidePanchPost
+);
+
 
 module.exports = router;

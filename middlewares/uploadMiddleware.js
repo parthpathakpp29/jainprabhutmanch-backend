@@ -26,6 +26,16 @@ const fileFilter = (req, file, cb) => {
     return;
   }
   
+  if (file.fieldname === 'uploadImage') {
+    // Validation for Sadhu profile images
+    if (['image/jpeg', 'image/png'].includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only JPEG and PNG files are allowed for Sadhu profile images'));
+    }
+    return;
+  }
+  
   // Other file types...
   if (allowedTypes.has(file.mimetype)) {
     cb(null, true);
@@ -53,11 +63,17 @@ const getS3Folder = (fieldname, req) => {
       return 'posts/images/';
     case 'video': // For posts
       return 'posts/videos/';
-    case 'media': // For stories and Sangh/Panch posts
-      if (req && req.baseUrl && req.baseUrl.includes('sangh-posts')) {
-        return 'sanghs/posts/media/';
-      } else if (req && req.baseUrl && req.baseUrl.includes('panch-posts')) {
-        return 'panch/posts/media/';
+    case 'media': // For stories and Sangh/Panch/Tirth/Vyapar posts
+      if (req && req.baseUrl) {
+        if (req.baseUrl.includes('sangh-posts')) {
+          return 'sanghs/posts/media/';
+        } else if (req.baseUrl.includes('panch-posts')) {
+          return 'panch/posts/media/';
+        } else if (req.baseUrl.includes('tirth-posts')) {
+          return 'tirth/posts/media/';
+        } else if (req.baseUrl.includes('vyapar/posts')) {
+          return 'vyapar/posts/media/';
+        }
       }
       return 'stories/';
     // Add Sangathan document folders
@@ -77,6 +93,43 @@ const getS3Folder = (fieldname, req) => {
       return 'sangathan/panch/documents/';
     case 'profilePhoto':
       return 'sangathan/panch/photos/';
+    case 'tirthPhoto':
+      return 'tirth/photos/';
+    case 'tirthDocument':
+      return 'tirth/documents/';
+    // Add JainVyapar folders
+    case 'businessPhotos':
+      return 'vyapar/photos/';
+    case 'businessDocuments':
+      return 'vyapar/documents/';
+    case 'uploadImage':
+      return 'sadhu/profile-images/';
+    case 'documents':
+      return 'sadhu/documents/';
+    case 'media':
+      return 'sadhu/post-media/';
+    case 'entityPhoto':
+      if (req && req.baseUrl) {
+        if (req.baseUrl.includes('sadhu')) {
+          return 'sadhu/photos/';
+        } else if (req.baseUrl.includes('tirth')) {
+          return 'tirth/photos/';
+        } else if (req.baseUrl.includes('vyapar')) {
+          return 'vyapar/photos/';
+        }
+      }
+      return 'others/';
+    case 'entityDocuments':
+      if (req && req.baseUrl) {
+        if (req.baseUrl.includes('sadhu')) {
+          return 'sadhu/documents/';
+        } else if (req.baseUrl.includes('tirth')) {
+          return 'tirth/documents/';
+        } else if (req.baseUrl.includes('vyapar')) {
+          return 'vyapar/documents/';
+        }
+      }
+      return 'others/';
     default:
       return 'others/';
   }
@@ -125,7 +178,7 @@ const handleMulterError = (err, req, res, next) => {
 
 // Add this to the multer configuration
 const optimizeImage = async (req, res, next) => {
-  if (!req.file || !['profilePicture', 'chatImage', 'groupIcon', 'image', 'media', 'presidentPhoto', 'secretaryPhoto', 'treasurerPhoto'].includes(req.file.fieldname)) return next();
+  if (!req.file || !['profilePicture', 'chatImage', 'groupIcon', 'image', 'media', 'presidentPhoto', 'secretaryPhoto', 'treasurerPhoto', 'businessPhotos', 'uploadImage', 'entityPhoto'].includes(req.file.fieldname)) return next();
 
   try {
     const optimized = await sharp(req.file.buffer)
@@ -182,3 +235,24 @@ module.exports.panchGroupDocs = upload.fields([
     { name: 'members[4].jainAadharPhoto', maxCount: 1 },
     { name: 'members[4].profilePhoto', maxCount: 1 }
 ]);
+
+// Add Sadhu document upload configuration
+module.exports.sadhuDocs = upload.fields([
+  { name: 'entityPhoto', maxCount: 5 },
+  { name: 'entityDocuments', maxCount: 5 }
+]);
+
+// Add Tirth document upload configuration
+module.exports.tirthDocs = upload.fields([
+  { name: 'entityPhoto', maxCount: 5 },
+  { name: 'entityDocuments', maxCount: 5 }
+]);
+
+// Add JainVyapar document upload configuration
+module.exports.vyaparDocs = upload.fields([
+  { name: 'entityPhoto', maxCount: 5 },
+  { name: 'entityDocuments', maxCount: 5 }
+]);
+
+// Add entity post upload configuration (standardized for all entities)
+module.exports.entityPostUpload = upload.array('media', 10);

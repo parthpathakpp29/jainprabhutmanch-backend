@@ -99,11 +99,123 @@ const getAreaSanghs = asyncHandler(async (req, res) => {
     }
 });
 
+// Get all states where Sanghs exist
+const getAvailableStates = asyncHandler(async (req, res) => {
+    try {
+        const states = await HierarchicalSangh.distinct('location.state', {
+            status: 'active'
+        });
+        
+        return successResponse(res, states, 'Available states retrieved successfully');
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
+    }
+});
+
+// Get available districts in a state where Sanghs exist
+const getAvailableDistricts = asyncHandler(async (req, res) => {
+    try {
+        const { state } = req.params;
+        
+        const districts = await HierarchicalSangh.distinct('location.district', {
+            'location.state': state,
+            status: 'active'
+        });
+        
+        return successResponse(res, districts, 'Available districts retrieved successfully');
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
+    }
+});
+
+// Get available cities in a district where Sanghs exist
+const getAvailableCities = asyncHandler(async (req, res) => {
+    try {
+        const { state, district } = req.params;
+        
+        const cities = await HierarchicalSangh.distinct('location.city', {
+            'location.state': state,
+            'location.district': district,
+            status: 'active'
+        });
+        
+        return successResponse(res, cities, 'Available cities retrieved successfully');
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
+    }
+});
+
+// Get available areas in a city where Sanghs exist
+const getAvailableAreas = asyncHandler(async (req, res) => {
+    try {
+        const { state, district, city } = req.params;
+        
+        const areas = await HierarchicalSangh.distinct('location.area', {
+            'location.state': state,
+            'location.district': district,
+            'location.city': city,
+            status: 'active'
+        });
+        
+        return successResponse(res, areas, 'Available areas retrieved successfully');
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
+    }
+});
+
+// Get Sangh details for a specific location
+const getSanghByLocation = asyncHandler(async (req, res) => {
+    try {
+        const { state, district, city, area } = req.query;
+        
+        const query = { status: 'active' };
+        
+        if (area) {
+            query['location.area'] = area;
+            query['location.city'] = city;
+            query['location.district'] = district;
+            query['location.state'] = state;
+            query.level = 'area';
+        } else if (city) {
+            query['location.city'] = city;
+            query['location.district'] = district;
+            query['location.state'] = state;
+            query.level = 'city';
+        } else if (district) {
+            query['location.district'] = district;
+            query['location.state'] = state;
+            query.level = 'district';
+        } else if (state) {
+            query['location.state'] = state;
+            query.level = 'state';
+        } else {
+            query.level = 'country';
+        }
+        
+        const sangh = await HierarchicalSangh.findOne(query)
+            .select('name level location officeBearers')
+            .populate('officeBearers.userId', 'firstName lastName fullName');
+            
+        if (!sangh) {
+            return errorResponse(res, 'No Sangh found for this location', 404);
+        }
+        
+        return successResponse(res, sangh, 'Sangh details retrieved successfully');
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
+    }
+});
+
 module.exports = {
     getStates,
     getDistricts,
     getCities,
     getAreas,
     getCitySanghs,
-    getAreaSanghs
+    getAreaSanghs,
+    getAvailableStates,
+    getAvailableDistricts,
+    getAvailableCities,
+    getAvailableAreas,
+    getSanghByLocation
 };

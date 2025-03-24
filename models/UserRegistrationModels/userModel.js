@@ -157,7 +157,7 @@ const userSchema = new mongoose.Schema(
     sanghRoles: [{
       sanghId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Sangh'
+        ref: 'HierarchicalSangh'
       },
       role: {
         type: String,
@@ -165,7 +165,68 @@ const userSchema = new mongoose.Schema(
       },
       level: {
         type: String,
-        enum: ['city', 'district', 'state', 'country']
+        enum: ['country', 'state', 'district', 'city', 'area']
+      },
+      sanghType: {
+        type: String,
+        enum: ['main', 'women', 'youth'],
+        default: 'main'
+      }
+    }],
+    panchRoles: [{
+      panchId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Panch'
+      },
+      role: {
+        type: String,
+        enum: ['member', 'head']
+      },
+      assignedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    tirthRoles: [{
+      tirthId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Tirth'
+      },
+      role: {
+        type: String,
+        enum: ['manager', 'assistant']
+      },
+      approvedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    vyaparRoles: [{
+      vyaparId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Vyapar'
+      },
+      role: {
+        type: String,
+        enum: ['owner', 'manager']
+      },
+      approvedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    sadhuRoles: [{
+      sadhuId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Sadhu'
+      },
+      role: {
+        type: String,
+        enum: ['owner', 'manager', 'admin']
+      },
+      approvedAt: {
+        type: Date,
+        default: Date.now
       }
     }]
   },

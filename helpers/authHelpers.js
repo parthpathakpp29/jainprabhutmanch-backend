@@ -5,7 +5,11 @@ const generateToken = (user) => {
     {
       _id: user._id,
       firstName: user.firstName,
-      lastName: user.lastName
+      lastName: user.lastName,
+      sanghRoles: user.sanghRoles || [],
+      panchRoles: user.panchRoles || [],
+      tirthRoles: user.tirthRoles || [],
+      vyaparRoles: user.vyaparRoles || []
     },
     process.env.JWT_SECRET
     // No expiresIn option = token never expires
