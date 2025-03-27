@@ -2,8 +2,6 @@ const express = require('express');
 const router = express.Router();
 const { 
     submitVyaparApplication,
-    getPendingApplications,
-    reviewApplication,
     vyaparLogin,
     getVyaparDetails,
     updateVyaparDetails,
@@ -11,8 +9,12 @@ const {
     getAvailableCities,
     getAllVyapars
 } = require('../../controllers/VyaparControllers/vyaparController');
+const { 
+    createVyaparPaymentOrder,
+    verifyVyaparPayment,
+    completeVyaparRegistration
+} = require('../../controllers/PaymentControllers/paymentController');
 const { authMiddleware, verifyVyaparRole } = require('../../middlewares/authMiddlewares');
-const { canReviewBusiness } = require('../../middlewares/vyaparAuthMiddleware');
 const upload = require('../../middlewares/uploadMiddleware');
 
 // Public routes
@@ -26,21 +28,19 @@ router.use(authMiddleware);
 // Vyapar access route - uses JWT token now
 router.get('/access/:vyaparId', verifyVyaparRole, vyaparLogin);
 
-// Application routes
-router.post('/apply', 
+// Payment and registration flow
+router.post('/create-payment', createVyaparPaymentOrder);
+router.post('/verify-payment', verifyVyaparPayment);
+router.post('/complete-registration/:orderId', 
+    upload.vyaparDocs,
+    completeVyaparRegistration
+);
+
+// Legacy direct creation route - keeping for backward compatibility
+// Consider deprecating this in the future
+router.post('/create', 
     upload.vyaparDocs,
     submitVyaparApplication
-);
-
-// City Sangh president routes
-router.get('/pending/:citySanghId', 
-    canReviewBusiness,
-    getPendingApplications
-);
-
-router.put('/review/:vyaparId',
-    canReviewBusiness,
-    reviewApplication
 );
 
 // Business viewing routes

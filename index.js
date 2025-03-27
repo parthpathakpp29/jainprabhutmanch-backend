@@ -9,6 +9,7 @@ const upload = require('./middlewares/uploadMiddleware');
 const bodyParser = require("body-parser");
 const { notFound, errorHandler } = require("./middlewares/errorHandler");
 const cors = require("cors");
+const session = require('express-session');
 const authRouter = require('./routes/UserRegistrationRoutes/authRoute');
 const { logMiddleware, authMiddleware, isAdmin, isSuperAdmin } = require('./middlewares/authMiddlewares');
 const jainAdharRouter = require('./routes/UserRegistrationRoutes/jainAdharRoute');
@@ -59,6 +60,17 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(logMiddleware);
 
+// Session configuration for payment flow
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'jainprabhutmanch-secret-key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { 
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
 // Public routes
 app.use("/api/user", authRouter);
 
@@ -91,7 +103,7 @@ app.use('/api/sadhu', sadhuRoutes);
 app.use('/api/sadhu/posts', sadhuPostRoutes);
 
 // Admin protected routes
-app.use("/api/biodata", [authMiddleware, isAdmin], biodataRoutes);
+app.use("/api/biodata", biodataRoutes);
 app.use("/api/rojgar", [authMiddleware, isAdmin], rojgarRoutes);
 app.use("/api/reporting", [authMiddleware, isAdmin], reportingRoutes);
 app.use('/api/suggestion-complaint', [authMiddleware, isAdmin], suggestionComplaintRoutes);

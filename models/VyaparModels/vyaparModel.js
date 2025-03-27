@@ -72,7 +72,7 @@ const jainVyaparSchema = new mongoose.Schema({
     applicationStatus: {
         type: String,
         enum: ['pending', 'approved', 'rejected'],
-        default: 'pending'
+        default: 'approved'
     },
     reviewNotes: {
         text: String,
@@ -85,7 +85,7 @@ const jainVyaparSchema = new mongoose.Schema({
     status: {
         type: String,
         enum: ['inactive', 'active'],
-        default: 'inactive'
+        default: 'active'
     }
 }, {
     timestamps: true

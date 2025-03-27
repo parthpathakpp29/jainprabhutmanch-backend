@@ -3,7 +3,7 @@ const HierarchicalSangh = require('../../models/SanghModels/hierarchicalSanghMod
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
-
+const User = require('../../models/UserRegistrationModels/userModel');
 
 // Get available cities with active Sanghs
 const getAvailableCities = async (req, res) => {
@@ -64,6 +64,7 @@ const submitVyaparApplication = async (req, res) => {
             }
         }
 
+        // Create business with auto-approved status
         const vyapar = new JainVyapar({
             businessName,
             businessType,
@@ -71,16 +72,35 @@ const submitVyaparApplication = async (req, res) => {
             description,
             location,
             citySanghId,
-            owner,
+            owner: {
+                ...owner,
+                userId: req.user._id  // Link to the user's ID
+            },
             businessDetails,
             photos,
-            documents
+            documents,
+            applicationStatus: 'approved',
+            status: 'active',
+            reviewNotes: {
+                text: 'Auto-approved',
+                reviewedAt: new Date()
+            }
         });
 
         await vyapar.save();
 
+        // Add vyaparRole to user
+        await User.findByIdAndUpdate(req.user._id, {
+            $push: {
+                vyaparRoles: {
+                    vyaparId: vyapar._id,
+                    role: 'owner'
+                }
+            }
+        });
+
         return successResponse(res, {
-            message: 'Business application submitted successfully',
+            message: 'Business created successfully and ready to use',
             vyaparId: vyapar._id
         });
     } catch (error) {
@@ -148,7 +168,6 @@ const reviewApplication = async (req, res) => {
 
         // If approved, add Vyapar role to the owner's user account
         if (status === 'approved' && vyapar.owner && vyapar.owner.jainAadharNumber) {
-            const User = require('../../models/UserRegistrationModels/userModel');
             const user = await User.findOne({ jainAadharNumber: vyapar.owner.jainAadharNumber });
             
             if (user) {
@@ -197,7 +216,6 @@ const vyaparLogin = async (req, res) => {
         const userId = req.user._id;
         const { vyaparId } = req.params;
 
-        const User = require('../../models/UserRegistrationModels/userModel');
         const user = await User.findById(userId);
 
         if (!user) {

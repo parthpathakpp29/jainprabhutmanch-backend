@@ -19,9 +19,9 @@ const createPost = async (req, res) => {
                 media.push(...req.files.image.map(file => ({
                     type: 'image',
                     url: file.location
-                })));
-            }
-            
+            })));
+        }
+
             // Handle videos
             if (req.files.video) {
                 media.push(...req.files.video.map(file => ({
@@ -59,15 +59,15 @@ const createPost = async (req, res) => {
             }
             if (req.files.video) {
                 deletePromises.push(...req.files.video.map(file => 
-                    s3Client.send(new DeleteObjectCommand({
-                        Bucket: process.env.AWS_BUCKET_NAME,
-                        Key: extractS3KeyFromUrl(file.location)
-                    }))
+                s3Client.send(new DeleteObjectCommand({
+                    Bucket: process.env.AWS_BUCKET_NAME,
+                    Key: extractS3KeyFromUrl(file.location)
+                }))
                 ));
             }
             
             try {
-                await Promise.all(deletePromises);
+            await Promise.all(deletePromises);
             } catch (deleteError) {
                 console.error('Error deleting files:', deleteError);
             }
@@ -84,7 +84,7 @@ const getPosts = async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const skip = (page - 1) * limit;
-        
+
         const posts = await JainVyaparPost.find({ 
             vyaparId,
             isHidden: false
@@ -99,7 +99,7 @@ const getPosts = async (req, res) => {
             vyaparId,
             isHidden: false
         });
-        
+
         return successResponse(res, {
             posts,
             pagination: {
@@ -128,11 +128,11 @@ const getPostById = async (req, res) => {
         .populate('likes', 'firstName lastName profilePicture')
         .populate('comments.user', 'firstName lastName profilePicture')
         .populate('comments.replies.user', 'firstName lastName profilePicture');
-        
+
         if (!post) {
             return errorResponse(res, 'Post not found', 404);
         }
-        
+
         return successResponse(res, { post });
     } catch (error) {
         return errorResponse(res, 'Failed to fetch post', 500, error.message);
@@ -144,13 +144,13 @@ const updatePost = async (req, res) => {
     try {
         const { postId } = req.params;
         const { caption } = req.body;
-        
+
         const post = await JainVyaparPost.findById(postId);
         
         if (!post) {
             return errorResponse(res, 'Post not found', 404);
         }
-        
+
         // Check if user is authorized to update this post
         if (post.postedByUserId.toString() !== req.user._id.toString()) {
             return errorResponse(res, 'Not authorized to update this post', 403);
@@ -160,7 +160,7 @@ const updatePost = async (req, res) => {
         if (caption) post.caption = caption;
         
         await post.save();
-        
+
         return successResponse(res, {
             message: 'Post updated successfully',
             post
@@ -176,11 +176,11 @@ const deletePost = async (req, res) => {
         const { postId } = req.params;
         
         const post = await JainVyaparPost.findById(postId);
-        
+
         if (!post) {
             return errorResponse(res, 'Post not found', 404);
         }
-        
+
         // Check if user is authorized to delete this post
         if (post.postedByUserId.toString() !== req.user._id.toString()) {
             return errorResponse(res, 'Not authorized to delete this post', 403);
@@ -188,7 +188,7 @@ const deletePost = async (req, res) => {
         
         post.isHidden = true;
         await post.save();
-        
+
         return successResponse(res, {
             message: 'Post deleted successfully'
         });
@@ -202,16 +202,16 @@ const toggleLike = async (req, res) => {
     try {
         const { postId } = req.params;
         const userId = req.user._id;
-        
+
         const post = await JainVyaparPost.findById(postId);
         
         if (!post) {
             return errorResponse(res, 'Post not found', 404);
         }
-        
+
         const result = post.toggleLike(userId);
         await post.save();
-        
+
         return successResponse(res, {
             message: result.isLiked ? 'Post liked' : 'Post unliked',
             isLiked: result.isLiked,
@@ -232,13 +232,13 @@ const addComment = async (req, res) => {
         if (!text) {
             return errorResponse(res, 'Comment text is required', 400);
         }
-        
+
         const post = await JainVyaparPost.findById(postId);
         
         if (!post) {
             return errorResponse(res, 'Post not found', 404);
         }
-        
+
         const comment = post.addComment(userId, text);
         await post.save();
         
@@ -247,7 +247,7 @@ const addComment = async (req, res) => {
         
         // Find the newly added comment
         const newComment = post.comments.id(comment._id);
-        
+
         return successResponse(res, {
             message: 'Comment added successfully',
             comment: newComment

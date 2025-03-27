@@ -3,11 +3,9 @@ const router = express.Router();
 const { authMiddleware, verifyTirthRole } = require('../../middlewares/authMiddlewares');
 const upload = require('../../middlewares/uploadMiddleware');
 const {
-    canManageTirthPost,
     canReviewTirth,
     canManageTirth,
-    canViewTirth
-} = require('../../middlewares/tirthAuthMiddleware');
+ } = require('../../middlewares/tirthAuthMiddleware');
 const {
     getAvailableCities,
     submitTirthApplication,

@@ -1,7 +1,25 @@
 const mongoose = require('mongoose');
 
 const vyavahikBiodataSchema = new mongoose.Schema(
-  {
+   {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['pending', 'paid', 'failed'],
+      default: 'pending'
+    },
+    paymentId: {
+      type: String,
+      sparse: true
+    },
+    isVisible: {
+      type: Boolean,
+      default: false
+    },
     type: {
       type: String,
     },
@@ -32,7 +50,7 @@ const vyavahikBiodataSchema = new mongoose.Schema(
           enum: ['Yes', 'No'],
         },
         legalDocument: {
-          type: String, 
+          type: String,
         },
         previousMarriageDetails: {
           spouseName: {
@@ -133,7 +151,7 @@ const vyavahikBiodataSchema = new mongoose.Schema(
       type: String,
     },
     occupationType: {
-      type: String, // 'job' or 'business'
+      type: String,
     },
     job: {
       jobName: {
@@ -195,5 +213,11 @@ const vyavahikBiodataSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Add indexes for common queries
+vyavahikBiodataSchema.index({ userId: 1 });
+vyavahikBiodataSchema.index({ paymentStatus: 1 });
+vyavahikBiodataSchema.index({ gender: 1, paymentStatus: 1 });
+vyavahikBiodataSchema.index({ isVisible: 1 });
 
 module.exports = mongoose.model('VyavahikBiodata', vyavahikBiodataSchema);

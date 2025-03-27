@@ -26,7 +26,7 @@ router.get('/posts/:postId', getPostById);
 // Protected routes - require user authentication
 router.use(authMiddleware);
 
-// Business owner routes - require business credentials
+// Business owner routes - require business role
 router.post('/:vyaparId/posts',
     canManageBusinessPost,
     postMediaUpload,

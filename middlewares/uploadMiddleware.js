@@ -99,9 +99,16 @@ const getS3Folder = (fieldname, req) => {
       return 'tirth/documents/';
     // Add JainVyapar folders
     case 'businessPhotos':
-      return 'vyapar/photos/';
+      return 'vyapar/business-photos/';
     case 'businessDocuments':
-      return 'vyapar/documents/';
+      return 'vyapar/business-documents/';
+    // Add Biodata folders
+    case 'passportPhoto':
+      return 'biodata/passport-photos/';
+    case 'fullPhoto':
+      return 'biodata/full-photos/';
+    case 'familyPhoto':
+      return 'biodata/family-photos/';
     case 'uploadImage':
       return 'sadhu/profile-images/';
     case 'documents':
@@ -131,7 +138,7 @@ const getS3Folder = (fieldname, req) => {
       }
       return 'others/';
     default:
-      return 'others/';
+      return 'misc/';
   }
 };
 
@@ -256,3 +263,10 @@ module.exports.vyaparDocs = upload.fields([
 
 // Add entity post upload configuration (standardized for all entities)
 module.exports.entityPostUpload = upload.array('media', 10);
+
+// Add Biodata image upload configuration
+module.exports.biodataImageUpload = upload.fields([
+  { name: 'passportPhoto', maxCount: 1 },
+  { name: 'fullPhoto', maxCount: 1 },
+  { name: 'familyPhoto', maxCount: 1 }
+]);
