@@ -18,6 +18,7 @@ const {
     deleteMedia,
     toggleHidePost
 } = require('../../controllers/TirthControllers/tirthPostController');
+const { body, param } = require('express-validator');
 
 // Public routes
 router.get('/:tirthId/posts', getPosts);
@@ -31,7 +32,7 @@ router.post('/:tirthId/posts', canManageTirthPost, postMediaUpload, createPost);
 router.put('/:postId', canManageTirthPost, postMediaUpload, updatePost);
 router.delete('/:postId', canManageTirthPost, deletePost);
 
-// Interaction routes
+// Interaction routesin
 router.post('/:postId/like', toggleLike);
 router.post('/:postId/comment', addComment);
 router.delete('/:postId/comments/:commentId', deleteComment);

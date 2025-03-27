@@ -24,26 +24,18 @@ const rateLimit = require('express-rate-limit');
 const { body, param, query } = require('express-validator');
 
 // Rate limiting for application submission
-// const applicationLimiter = rateLimit({
-//   windowMs: 24 * 60 * 60 * 1000, // 24 hours
-//   max: 3, // limit each IP to 1 application per day
-//   message: {
-//     success: false,
-//     message: 'Too many applications. Please try again tomorrow.'
-//   },
-//   standardHeaders: true,
-//   keyGenerator: (req) => req.user ? req.user.id : req.ip // Use user ID if available
-// });
-
-// Rate limiting for status checks
-const statusCheckLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // limit each IP to 10 requests per 15 minutes
+const applicationLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000, // 24 hours
+  max: 10, // limit each IP to 1 application per day
   message: {
     success: false,
-    message: 'Too many status checks. Please try again later.'
-  }
+    message: 'Too many applications. Please try again tomorrow.'
+  },
+  standardHeaders: true,
+  keyGenerator: (req) => req.user ? req.user.id : req.ip // Use user ID if available
 });
+
+
 
 // Protected routes (require authentication)
 router.use(authMiddleware);
@@ -51,7 +43,7 @@ router.use(authMiddleware);
 // User routes
 router.post(
   '/apply',
-  // applicationLimiter,
+  applicationLimiter,
   upload.jainAadharDocs,
   [
     body('name').notEmpty().withMessage('Name is required'),
@@ -67,7 +59,7 @@ router.post(
 
 router.get(
   '/status',
-  statusCheckLimiter,
+
   getApplicationStatus
 );
 

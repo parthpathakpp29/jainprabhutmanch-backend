@@ -32,7 +32,7 @@ const validateRequest = (req, res, next) => {
 // Rate limiting for comment creation to prevent spam
 const commentLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 30, // limit each user to 30 comments per 15 minutes
+    max: 10, // limit each user to 30 comments per 15 minutes
     message: {
         success: false,
         message: 'Too many comments created. Please try again later.'

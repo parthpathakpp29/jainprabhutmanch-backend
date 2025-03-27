@@ -18,7 +18,7 @@ router.use(authMiddleware);
 // Rate limiting for follow/unfollow actions to prevent abuse
 const followActionLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 30, // limit each user to 30 follow/unfollow actions per 15 minutes
+    max: 20, // limit each user to 30 follow/unfollow actions per 15 minutes
     message: {
         success: false,
         message: 'Too many follow/unfollow actions. Please try again later.'

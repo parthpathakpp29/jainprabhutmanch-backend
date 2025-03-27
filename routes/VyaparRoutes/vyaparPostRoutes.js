@@ -18,6 +18,7 @@ const {
 const { postMediaUpload } = require('../../middlewares/uploadMiddleware');
 const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const { canManageBusinessPost } = require('../../middlewares/vyaparAuthMiddleware');
+const { body, param } = require('express-validator');
 
 // Public routes
 router.get('/:vyaparId/posts', getPosts);

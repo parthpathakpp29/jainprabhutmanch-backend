@@ -17,12 +17,37 @@ const {
 } = require('../../controllers/SocialMediaControllers/groupChatController');
 const { authenticate } = require('../../middlewares/authMiddlewares');
 const upload = require('../../middlewares/uploadMiddleware');
+const rateLimit = require('express-rate-limit');
+
+// Rate limiting for group creation
+const groupCreationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // limit each user to 5 group creations per hour
+  message: {
+    success: false,
+    message: 'Too many groups created. Please try again later.'
+  },
+  standardHeaders: true,
+  keyGenerator: (req) => req.user ? req.user.id : req.ip
+});
+
+// Rate limiting for group messages
+const groupMessageLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 15, // limit each user to 15 messages per minute
+  message: {
+    success: false,
+    message: 'Too many messages sent. Please slow down.'
+  },
+  standardHeaders: true,
+  keyGenerator: (req) => req.user ? req.user.id : req.ip
+});
 
 // Apply authentication to all routes
 router.use(authenticate);
 
 // Create a new group chat
-router.post('/create', upload.single('groupImage'), createGroupChat);
+router.post('/create', groupCreationLimiter, upload.single('groupImage'), createGroupChat);
 
 // Get group details
 router.get('/group/:groupId', getGroupDetails);
@@ -34,7 +59,7 @@ router.get('/user-groups', getAllGroups);
 router.get('/all-chats', getAllGroupChats);
 
 // Send group message
-router.post('/send-message', upload.single('chatImage'), sendGroupMessage);
+router.post('/send-message', groupMessageLimiter, upload.single('chatImage'), sendGroupMessage);
 
 // Get all messages for a group
 router.get('/messages/:groupId', getGroupMessages);

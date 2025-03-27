@@ -18,7 +18,7 @@ const {
 const { authMiddleware, verifySadhuRole } = require('../../middlewares/authMiddlewares');
 const { canManageSadhuPost } = require('../../middlewares/sadhuAuthMiddleware');
 const { postMediaUpload } = require('../../middlewares/uploadMiddleware');
-
+const { body, param } = require('express-validator');
 // Public routes
 
 router.get('/:sadhuId/posts', getSadhuPosts);

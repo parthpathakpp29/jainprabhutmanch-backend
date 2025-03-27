@@ -13,6 +13,8 @@ const initializeWebSocket = (server) => {
       methods: ["GET", "POST"],
       credentials: true,
     },
+    transports: ['websocket', 'polling'],
+    allowUpgrades: true,
     pingTimeout: 60000, // Close connection after 60s of inactivity
     pingInterval: 25000, // Send a ping every 25s
   });
