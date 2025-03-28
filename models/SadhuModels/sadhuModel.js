@@ -215,4 +215,14 @@ const sadhuSchema = new mongoose.Schema({
     timestamps: true
 });
 
+// Add indexes for optimized queries
+sadhuSchema.index({ name: 1 }); // For name-based searches
+sadhuSchema.index({ 'contactDetails.permanentAddress.state': 1 }); // For state-based filtering
+sadhuSchema.index({ 'contactDetails.permanentAddress.district': 1 }); // For district-based filtering
+sadhuSchema.index({ 'contactDetails.permanentAddress.city': 1 }); // For city-based filtering
+sadhuSchema.index({ createdAt: -1 }); // For sorting by creation date
+sadhuSchema.index({ applicationStatus: 1 }); // For filtering verified sadhus
+sadhuSchema.index({ panth: 1 }); // For filtering by sect
+sadhuSchema.index({ name: 'text', sadhuName: 'text' }); // Text search for name and sadhu name
+
 module.exports = mongoose.model('Sadhu', sadhuSchema);

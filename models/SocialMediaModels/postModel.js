@@ -42,7 +42,8 @@ const postSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Community',
       sparse: true
-    }
+    },
+    tags: [{ type: String }]
   },
   {
     timestamps: true,
@@ -52,15 +53,14 @@ const postSchema = new mongoose.Schema(
 );
 
 // Indexes - grouped for better readability
-postSchema.index({ createdAt: -1 });
-postSchema.index({ community: 1, createdAt: -1 });
-postSchema.index({ 'comments.createdAt': -1 });
-// Add compound indexes for common query patterns
-postSchema.index({ user: 1, createdAt: -1 }); // For user profile posts
+postSchema.index({ user: 1, createdAt: -1 }); // For user's posts feed
+postSchema.index({ createdAt: -1 }); // For global feed
+postSchema.index({ 'comments.user': 1 }); // For finding user's comments
+postSchema.index({ likes: 1 }); // For finding posts liked by a user
 postSchema.index({ isHidden: 1, createdAt: -1 }); // For filtering hidden posts
-postSchema.index({ user: 1, isHidden: 1 }); // For quickly finding a user's visible posts
-
-// Add text index for search functionality
+postSchema.index({ tags: 1, createdAt: -1 }); // For tag-based searches
+postSchema.index({ community: 1, createdAt: -1 }); // For community posts
+postSchema.index({ 'comments.createdAt': -1 });
 postSchema.index({ caption: 'text' }); // Enables text search on captions
 
 // Virtuals

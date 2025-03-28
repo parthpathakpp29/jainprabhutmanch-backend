@@ -77,10 +77,12 @@ const sadhuPostSchema = new mongoose.Schema({
     toObject: { virtuals: true }
 });
 
-// Add indexes for better performance
-sadhuPostSchema.index({ sadhuId: 1, createdAt: -1 });
-sadhuPostSchema.index({ isHidden: 1 });
-sadhuPostSchema.index({ createdAt: -1 });
+// Add indexes for optimized queries
+sadhuPostSchema.index({ sadhuId: 1, createdAt: -1 }); // For Sadhu's posts feed
+sadhuPostSchema.index({ createdAt: -1 }); // For global feed
+sadhuPostSchema.index({ 'comments.user': 1 }); // For finding user's comments
+sadhuPostSchema.index({ likes: 1 }); // For finding posts liked by a user
+sadhuPostSchema.index({ isHidden: 1, createdAt: -1 }); // For filtering hidden posts
 
 sadhuPostSchema.virtual('likeCount').get(function() {
     return this.likes.length;

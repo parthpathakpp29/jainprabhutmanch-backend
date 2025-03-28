@@ -255,10 +255,12 @@ hierarchicalSanghSchema.methods.getChildSanghs = async function() {
 };
 
 // Optimize indexes for common query patterns
-hierarchicalSanghSchema.index({ level: 1, status: 1 }); // For filtering by level and status
-hierarchicalSanghSchema.index({ parentSangh: 1, status: 1 }); // For getting child Sanghs
-hierarchicalSanghSchema.index({ 'location.state': 1, 'location.district': 1, level: 1 }); // For location-based queries
-hierarchicalSanghSchema.index({ 'officeBearers.userId': 1 }); // For finding user's roles
-hierarchicalSanghSchema.index({ sanghAccessId: 1 }, { sparse: true }); // For access lookups
+hierarchicalSanghSchema.index({ level: 1 });
+hierarchicalSanghSchema.index({ parentSanghId: 1 });
+hierarchicalSanghSchema.index({ state: 1 });
+hierarchicalSanghSchema.index({ district: 1 });
+hierarchicalSanghSchema.index({ city: 1 });
+// Compound indexes for location-based queries
+hierarchicalSanghSchema.index({ state: 1, district: 1, city: 1 });
 
 module.exports = mongoose.model('HierarchicalSangh', hierarchicalSanghSchema); 

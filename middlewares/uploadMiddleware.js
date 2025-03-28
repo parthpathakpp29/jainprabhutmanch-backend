@@ -185,21 +185,147 @@ const handleMulterError = (err, req, res, next) => {
 
 // Add this to the multer configuration
 const optimizeImage = async (req, res, next) => {
-  if (!req.file || !['profilePicture', 'chatImage', 'groupIcon', 'image', 'media', 'presidentPhoto', 'secretaryPhoto', 'treasurerPhoto', 'businessPhotos', 'uploadImage', 'entityPhoto'].includes(req.file.fieldname)) return next();
+  // Skip if no file or not a supported field type
+  if (!req.file || !['profilePicture', 'chatImage', 'groupIcon', 'image', 'media', 'presidentPhoto', 'secretaryPhoto', 'treasurerPhoto', 'businessPhotos', 'uploadImage', 'entityPhoto', 'passportPhoto', 'fullPhoto', 'familyPhoto'].includes(req.file.fieldname)) {
+    return next();
+  }
+
+  // Skip if not an image
+  if (!req.file.mimetype.startsWith('image/')) {
+    return next();
+  }
 
   try {
-    const optimized = await sharp(req.file.buffer)
-      .resize(800, 800, {
+    // Skip small files (already optimized)
+    if (req.file.size && req.file.size < 50 * 1024) { // Skip files smaller than 50KB
+      return next();
+    }
+
+    let sharpInstance = sharp(req.file.buffer);
+    
+    // Determine appropriate dimensions and format based on field type
+    if (['profilePicture', 'groupIcon', 'presidentPhoto', 'secretaryPhoto', 'treasurerPhoto', 'uploadImage', 'passportPhoto'].includes(req.file.fieldname)) {
+      // Profile pictures and avatars (square crop)
+      sharpInstance = sharpInstance.resize(500, 500, {
         fit: 'cover',
         position: 'center'
-      })
-      .jpeg({ quality: 80 })
-      .toBuffer();
+      });
+    } else if (['fullPhoto', 'familyPhoto'].includes(req.file.fieldname)) {
+      // Full photos (maintain aspect ratio, max width 1000px)
+      sharpInstance = sharpInstance.resize(1000, null, {
+        fit: 'inside',
+        withoutEnlargement: true
+      });
+    } else {
+      // General images (maintain aspect ratio, max width 1200px)
+      sharpInstance = sharpInstance.resize(1200, null, {
+        fit: 'inside',
+        withoutEnlargement: true
+      });
+    }
 
+    // Strip metadata to reduce file size
+    sharpInstance = sharpInstance.withMetadata(false);
+    
+    // Preserve PNG format for logos and icons (for transparency)
+    if (req.file.mimetype === 'image/png' && ['groupIcon', 'businessPhotos'].includes(req.file.fieldname)) {
+      sharpInstance = sharpInstance.png({ quality: 85, compressionLevel: 9 });
+    } else {
+      // Use JPEG for photos and other images
+      sharpInstance = sharpInstance.jpeg({ quality: 80, progressive: true });
+    }
+
+    const optimized = await sharpInstance.toBuffer();
     req.file.buffer = optimized;
+    
+    console.log(`Optimized image: ${req.file.fieldname}, original size: ${req.file.size}, new size: ${optimized.length} bytes`);
+    
     next();
   } catch (error) {
-    next(error);
+    console.error('Image optimization error:', error);
+    // Continue without optimization rather than failing the upload
+    next();
+  }
+};
+
+// Optimize multiple files in a request
+const optimizeMultipleFiles = async (req, res, next) => {
+  if (!req.files) {
+    return next();
+  }
+  
+  try {
+    // Process each field
+    for (const fieldName in req.files) {
+      const files = req.files[fieldName];
+      
+      // Process each file in the field
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        // Skip non-image files
+        if (!file.mimetype.startsWith('image/')) {
+          continue;
+        }
+        
+        // Skip small files (already optimized)
+        if (file.size && file.size < 50 * 1024) {
+          continue;
+        }
+        
+        let sharpInstance = sharp(file.buffer);
+        
+        // Determine appropriate dimensions based on field type
+        if (['profilePhoto', 'presidentPhoto', 'secretaryPhoto', 'treasurerPhoto', 'jainAadharPhoto', 'passportPhoto'].includes(fieldName)) {
+          // Profile pictures (square crop)
+          sharpInstance = sharpInstance.resize(500, 500, {
+            fit: 'cover',
+            position: 'center'
+          });
+        } else if (['fullPhoto', 'familyPhoto'].includes(fieldName)) {
+          // Full photos (maintain aspect ratio, max width 1000px)
+          sharpInstance = sharpInstance.resize(1000, null, {
+            fit: 'inside',
+            withoutEnlargement: true
+          });
+        } else if (fieldName.includes('profilePhoto') || fieldName.includes('jainAadharPhoto')) {
+          // Handle array notation fields like members[0].profilePhoto
+          sharpInstance = sharpInstance.resize(500, 500, {
+            fit: 'cover',
+            position: 'center'
+          });
+        } else {
+          // General images (maintain aspect ratio, max width 1200px)
+          sharpInstance = sharpInstance.resize(1200, null, {
+            fit: 'inside',
+            withoutEnlargement: true
+          });
+        }
+        
+        // Strip metadata
+        sharpInstance = sharpInstance.withMetadata(false);
+        
+        // Format-specific optimization
+        if (file.mimetype === 'image/png' && ['businessLogo', 'entityPhoto'].includes(fieldName)) {
+          // Preserve PNG for logos (transparency)
+          sharpInstance = sharpInstance.png({ quality: 85, compressionLevel: 9 });
+        } else {
+          // Use JPEG for photos
+          sharpInstance = sharpInstance.jpeg({ quality: 80, progressive: true });
+        }
+        
+        const optimized = await sharpInstance.toBuffer();
+        file.buffer = optimized;
+        
+        console.log(`Optimized image in field ${fieldName}, original size: ${file.size}, new size: ${optimized.length} bytes`);
+      }
+    }
+    
+    next();
+  } catch (error) {
+    console.error('Multiple file optimization error:', error);
+    // Continue without optimization rather than failing the upload
+    next();
   }
 };
 
@@ -216,21 +342,24 @@ module.exports.storyUpload = [upload.array('media', 10), optimizeImage];
 module.exports.postMediaUpload = [upload.fields([
   { name: 'image', maxCount: 10 },
   { name: 'video', maxCount: 10 }
-]), optimizeImage];
-module.exports.optimizeGroupIcon = optimizeImage;
+]), optimizeMultipleFiles];
 
 // Add Sangathan document upload configuration
-module.exports.sangathanDocs = upload.fields([
-  { name: 'presidentJainAadhar', maxCount: 1 },
-  { name: 'secretaryJainAadhar', maxCount: 1 },
-  { name: 'treasurerJainAadhar', maxCount: 1 },
-  { name: 'presidentPhoto', maxCount: 1 },
-  { name: 'secretaryPhoto', maxCount: 1 },
-  { name: 'treasurerPhoto', maxCount: 1 }
-]);
+module.exports.sangathanDocs = [
+  upload.fields([
+    { name: 'presidentJainAadhar', maxCount: 1 },
+    { name: 'secretaryJainAadhar', maxCount: 1 },
+    { name: 'treasurerJainAadhar', maxCount: 1 },
+    { name: 'presidentPhoto', maxCount: 1 },
+    { name: 'secretaryPhoto', maxCount: 1 },
+    { name: 'treasurerPhoto', maxCount: 1 }
+  ]),
+  optimizeMultipleFiles
+];
 
 // Add specific Panch document upload configuration for all 5 members
-module.exports.panchGroupDocs = upload.fields([
+module.exports.panchGroupDocs = [
+  upload.fields([
     { name: 'members[0].jainAadharPhoto', maxCount: 1 },
     { name: 'members[0].profilePhoto', maxCount: 1 },
     { name: 'members[1].jainAadharPhoto', maxCount: 1 },
@@ -241,32 +370,46 @@ module.exports.panchGroupDocs = upload.fields([
     { name: 'members[3].profilePhoto', maxCount: 1 },
     { name: 'members[4].jainAadharPhoto', maxCount: 1 },
     { name: 'members[4].profilePhoto', maxCount: 1 }
-]);
+  ]),
+  optimizeMultipleFiles
+];
 
 // Add Sadhu document upload configuration
-module.exports.sadhuDocs = upload.fields([
-  { name: 'entityPhoto', maxCount: 5 },
-  { name: 'entityDocuments', maxCount: 5 }
-]);
+module.exports.sadhuDocs = [
+  upload.fields([
+    { name: 'entityPhoto', maxCount: 5 },
+    { name: 'entityDocuments', maxCount: 5 }
+  ]),
+  optimizeMultipleFiles
+];
 
 // Add Tirth document upload configuration
-module.exports.tirthDocs = upload.fields([
-  { name: 'entityPhoto', maxCount: 5 },
-  { name: 'entityDocuments', maxCount: 5 }
-]);
+module.exports.tirthDocs = [
+  upload.fields([
+    { name: 'entityPhoto', maxCount: 5 },
+    { name: 'entityDocuments', maxCount: 5 }
+  ]),
+  optimizeMultipleFiles
+];
 
 // Add JainVyapar document upload configuration
-module.exports.vyaparDocs = upload.fields([
-  { name: 'entityPhoto', maxCount: 5 },
-  { name: 'entityDocuments', maxCount: 5 }
-]);
+module.exports.vyaparDocs = [
+  upload.fields([
+    { name: 'entityPhoto', maxCount: 5 },
+    { name: 'entityDocuments', maxCount: 5 }
+  ]),
+  optimizeMultipleFiles
+];
 
 // Add entity post upload configuration (standardized for all entities)
-module.exports.entityPostUpload = upload.array('media', 10);
+module.exports.entityPostUpload = [upload.array('media', 10), optimizeImage];
 
 // Add Biodata image upload configuration
-module.exports.biodataImageUpload = upload.fields([
-  { name: 'passportPhoto', maxCount: 1 },
-  { name: 'fullPhoto', maxCount: 1 },
-  { name: 'familyPhoto', maxCount: 1 }
-]);
+module.exports.biodataImageUpload = [
+  upload.fields([
+    { name: 'passportPhoto', maxCount: 1 },
+    { name: 'fullPhoto', maxCount: 1 },
+    { name: 'familyPhoto', maxCount: 1 }
+  ]),
+  optimizeMultipleFiles
+];

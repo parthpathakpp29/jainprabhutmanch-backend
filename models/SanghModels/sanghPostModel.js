@@ -91,10 +91,12 @@ const sanghPostSchema = new mongoose.Schema({
 });
 
 // Indexes for better query performance
-sanghPostSchema.index({ sanghId: 1, createdAt: -1 });
-sanghPostSchema.index({ postedByUserId: 1 });
-sanghPostSchema.index({ createdAt: -1 });
-sanghPostSchema.index({ isHidden: 1 });
+sanghPostSchema.index({ sanghId: 1, createdAt: -1 }); // For Sangh's posts feed
+sanghPostSchema.index({ createdAt: -1 }); // For global feed
+sanghPostSchema.index({ 'comments.user': 1 }); // For finding user's comments
+sanghPostSchema.index({ likes: 1 }); // For finding posts liked by a user
+sanghPostSchema.index({ isHidden: 1, createdAt: -1 }); // For filtering hidden posts
+// sanghPostSchema.index({ postType: 1, createdAt: -1 }); // For filtering by post type (Commented out because postType field does not exist in the schema)
 
 // Virtuals
 sanghPostSchema.virtual('likeCount').get(function() {

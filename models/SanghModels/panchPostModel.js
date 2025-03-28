@@ -87,12 +87,13 @@ const panchPostSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Indexes for better query performance
-panchPostSchema.index({ panchId: 1, createdAt: -1 });
-panchPostSchema.index({ sanghId: 1, createdAt: -1 });
-panchPostSchema.index({ postedByMemberId: 1 });
-panchPostSchema.index({ createdAt: -1 });
-panchPostSchema.index({ isHidden: 1 });
+// Add indexes for optimized queries
+panchPostSchema.index({ panchId: 1, createdAt: -1 }); // For Panch's posts feed
+panchPostSchema.index({ createdAt: -1 }); // For global feed
+panchPostSchema.index({ 'comments.user': 1 }); // For finding user's comments
+panchPostSchema.index({ likes: 1 }); // For finding posts liked by a user
+panchPostSchema.index({ isHidden: 1, createdAt: -1 }); // For filtering hidden posts
+panchPostSchema.index({ postedByMemberId: 1, createdAt: -1 }); // For finding posts by specific user
 
 // Virtuals
 panchPostSchema.virtual('likeCount').get(function() {

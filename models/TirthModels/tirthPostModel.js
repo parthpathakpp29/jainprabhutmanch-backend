@@ -78,10 +78,13 @@ const tirthPostSchema = new mongoose.Schema({
     toObject: { virtuals: true }
 });
 
-// Add indexes for common queries
-tirthPostSchema.index({ tirthId: 1, createdAt: -1 });
-tirthPostSchema.index({ isHidden: 1 });
-tirthPostSchema.index({ createdAt: -1 });
+// Add indexes for optimized queries
+tirthPostSchema.index({ tirthId: 1, createdAt: -1 }); // For Tirth's posts feed
+tirthPostSchema.index({ createdAt: -1 }); // For global feed
+tirthPostSchema.index({ 'comments.user': 1 }); // For finding user's comments
+tirthPostSchema.index({ likes: 1 }); // For finding posts liked by a user
+tirthPostSchema.index({ isHidden: 1, createdAt: -1 }); // For filtering hidden posts
+tirthPostSchema.index({ postedByUserId: 1, createdAt: -1 }); // For finding posts by specific user
 
 // Add virtuals for counts
 tirthPostSchema.virtual('likeCount').get(function() {

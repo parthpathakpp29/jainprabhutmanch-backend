@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const dbConnect = require("./config/dbConnect");
 const app = express();
+const helmet = require('helmet');
 const dotenv = require("dotenv").config();
 const PORT = process.env.PORT || 4000;
 const path = require('path');
@@ -50,6 +51,7 @@ const sadhuPostRoutes = require('./routes/SadhuRoutes/sadhuPostRoutes');
 
 dbConnect();
 
+app.use(helmet());
 // Middleware
 app.use(cors({
   origin: "*",
@@ -104,9 +106,9 @@ app.use('/api/sadhu/posts', sadhuPostRoutes);
 
 // Admin protected routes
 app.use("/api/biodata", biodataRoutes);
-app.use("/api/rojgar", [authMiddleware, isAdmin], rojgarRoutes);
-app.use("/api/reporting", [authMiddleware, isAdmin], reportingRoutes);
-app.use('/api/suggestion-complaint', [authMiddleware, isAdmin], suggestionComplaintRoutes);
+app.use("/api/rojgar", rojgarRoutes);
+app.use("/api/reporting", reportingRoutes);
+app.use('/api/suggestion-complaint', suggestionComplaintRoutes);
 app.use("/api/granth", [authMiddleware, isAdmin], granthRoutes);
 app.use("/api/jainitihas", [authMiddleware, isAdmin], jainItihasRoutes);
 app.use('/api/yojana', [authMiddleware, isAdmin], govtYojanaRoutes);
