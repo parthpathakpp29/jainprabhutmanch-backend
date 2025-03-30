@@ -1,7 +1,7 @@
 const Tirth = require('../models/TirthModels/tirthModel');
 const HierarchicalSangh = require('../models/SanghModels/hierarchicalSanghModel');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
-const UserRoleService = require('../services/userRoleService');
+
 
 // Verify tirth owner using JWT token and role
 const verifyTirthOwner = async (req, res, next) => {

@@ -8,7 +8,7 @@ class UserRoleService {
     /**
      * Add a role to a user
      * @param {string} userId - The user ID
-     * @param {string} entityType - The type of entity (sangh, panch, tirth, vyapar)
+     * @param {string} entityType - The type of entity (sangh, panch, tirth, vyapar, sadhu)
      * @param {string} entityId - The ID of the entity
      * @param {string} role - The role to add (president, secretary, treasurer, member, etc.)
      * @param {object} additionalData - Any additional data to store with the role
@@ -33,6 +33,9 @@ class UserRoleService {
                 break;
             case 'vyapar':
                 roleField = 'vyaparRoles';
+                break;
+            case 'sadhu':
+                roleField = 'sadhuRoles';
                 break;
             default:
                 throw new Error('Invalid entity type');
@@ -139,7 +142,7 @@ class UserRoleService {
         }
 
         const user = await User.findById(userId)
-            .select('sanghRoles panchRoles tirthRoles vyaparRoles')
+            .select('sanghRoles panchRoles tirthRoles vyaparRoles sadhuRoles')
             .lean();
 
         if (!user) {
@@ -150,14 +153,15 @@ class UserRoleService {
             sanghRoles: user.sanghRoles || [],
             panchRoles: user.panchRoles || [],
             tirthRoles: user.tirthRoles || [],
-            vyaparRoles: user.vyaparRoles || []
+            vyaparRoles: user.vyaparRoles || [],
+            sadhuRoles: user.sadhuRoles || []
         };
     }
 
     /**
      * Check if a user has a specific role
      * @param {string} userId - The user ID
-     * @param {string} entityType - The type of entity (sangh, panch, tirth, vyapar)
+     * @param {string} entityType - The type of entity (sangh, panch, tirth, vyapar, sadhu)
      * @param {string} entityId - The ID of the entity
      * @param {string} role - The role to check for (optional, if not provided, checks for any role)
      * @returns {Promise<boolean>} Whether the user has the role
@@ -181,6 +185,9 @@ class UserRoleService {
                 break;
             case 'vyapar':
                 roleField = 'vyaparRoles';
+                break;
+            case 'sadhu':
+                roleField = 'sadhuRoles';
                 break;
             default:
                 throw new Error('Invalid entity type');

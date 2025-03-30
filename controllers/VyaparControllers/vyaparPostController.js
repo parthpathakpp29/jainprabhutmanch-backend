@@ -3,6 +3,7 @@ const JainVyapar = require('../../models/VyaparModels/vyaparModel');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
+const { createLikeNotification, createCommentNotification, createReplyNotification } = require('../../utils/notificationUtils');
 
 // Create new Vyapar post
 const createPost = async (req, res) => {
@@ -202,24 +203,32 @@ const toggleLike = async (req, res) => {
     try {
         const { postId } = req.params;
         const userId = req.user._id;
-
-        const post = await JainVyaparPost.findById(postId);
+        
+        const post = await JainVyaparPost.findById(postId)
+          .populate('postedByUserId', 'firstName lastName');
         
         if (!post) {
-            return errorResponse(res, 'Post not found', 404);
+          return errorResponse(res, 'Post not found', 404);
         }
-
+        
         const result = post.toggleLike(userId);
         await post.save();
-
-        return successResponse(res, {
-            message: result.isLiked ? 'Post liked' : 'Post unliked',
-            isLiked: result.isLiked,
-            likeCount: result.likeCount
-        });
-    } catch (error) {
-        return errorResponse(res, 'Failed to toggle like', 500, error.message);
-    }
+        
+        // Create notification if the post was liked (not unliked)
+        if (result.isLiked && post.postedByUserId._id.toString() !== userId.toString()) {
+          await createLikeNotification({
+            senderId: userId,
+            receiverId: post.postedByUserId._id,
+            entityId: postId,
+            entityType: 'sanghPost',
+            senderName: `${req.user.firstName} ${req.user.lastName}`
+          });
+        }
+        
+        return successResponse(res, result, `Post ${result.isLiked ? 'liked' : 'unliked'} successfully`);
+      } catch (error) {
+        return errorResponse(res, error.message, 500);
+      }
 };
 
 // Add a comment to a post
@@ -230,31 +239,41 @@ const addComment = async (req, res) => {
         const userId = req.user._id;
         
         if (!text) {
-            return errorResponse(res, 'Comment text is required', 400);
+          return errorResponse(res, 'Comment text is required', 400);
         }
-
-        const post = await JainVyaparPost.findById(postId);
+        
+        const post = await JainVyaparPost.findById(postId)
+          .populate('postedByUserId', 'firstName lastName');
         
         if (!post) {
-            return errorResponse(res, 'Post not found', 404);
+          return errorResponse(res, 'Post not found', 404);
         }
-
+        
         const comment = post.addComment(userId, text);
         await post.save();
         
-        // Populate the user info for the new comment
+        // Populate user info for the new comment
         await post.populate('comments.user', 'firstName lastName profilePicture');
-        
-        // Find the newly added comment
         const newComment = post.comments.id(comment._id);
-
+        
+        // Create notification for post owner (if commenter is not the owner)
+        if (post.postedByUserId._id.toString() !== userId.toString()) {
+          await createCommentNotification({
+            senderId: userId,
+            receiverId: post.postedByUserId._id,
+            entityId: postId,
+            entityType: 'vyaparPost',
+            senderName: `${req.user.firstName} ${req.user.lastName}`
+          });
+        }
+        
         return successResponse(res, {
-            message: 'Comment added successfully',
-            comment: newComment
-        });
-    } catch (error) {
-        return errorResponse(res, 'Failed to add comment', 500, error.message);
-    }
+          comment: newComment,
+          commentCount: post.comments.length
+        }, 'Comment added successfully');
+      } catch (error) {
+        return errorResponse(res, error.message, 500);
+      }
 };
 
 // Delete a comment from a post
@@ -296,45 +315,53 @@ const addReply = async (req, res) => {
         const { postId, commentId } = req.params;
         const { text } = req.body;
         const userId = req.user._id;
-
+        
         if (!text) {
-            return errorResponse(res, 'Reply text is required', 400);
+          return errorResponse(res, 'Reply text is required', 400);
         }
-
+        
         const post = await JainVyaparPost.findById(postId);
         if (!post) {
-            return errorResponse(res, 'Post not found', 404);
+          return errorResponse(res, 'Post not found', 404);
         }
-
+        
         const comment = post.comments.id(commentId);
         if (!comment) {
-            return errorResponse(res, 'Comment not found', 404);
+          return errorResponse(res, 'Comment not found', 404);
         }
-
-        // Add reply to the comment
-        const reply = {
-            user: userId,
-            text,
-            createdAt: new Date()
-        };
-
-        comment.replies.push(reply);
-        await post.save();
-
-        // Populate user info for the reply
-        await post.populate('comments.replies.user', 'firstName lastName profilePicture');
         
-        // Get the updated comment with the new reply
+        comment.replies.push({
+          user: userId,
+          text,
+          createdAt: new Date()
+        });
+        
+        await post.save();
+        
+        // Populate user info for the new reply
+        await post.populate('comments.replies.user', 'firstName lastName profilePicture');
         const updatedComment = post.comments.id(commentId);
         const newReply = updatedComment.replies[updatedComment.replies.length - 1];
-
+        
+        // Create notification for comment owner (if replier is not the comment owner)
+        if (comment.user.toString() !== userId.toString()) {
+          await createReplyNotification({
+            senderId: userId,
+            receiverId: comment.user,
+            entityId: commentId,
+            postId: postId,
+            entityType: 'vyaparPost',
+            senderName: `${req.user.firstName} ${req.user.lastName}`
+          });
+        }
+        
         return successResponse(res, {
-            message: 'Reply added successfully',
-            reply: newReply
-        });
-    } catch (error) {
-        return errorResponse(res, 'Failed to add reply', 500, error.message);
-    }
+          reply: newReply,
+          replyCount: updatedComment.replies.length
+        }, 'Reply added successfully');
+      } catch (error) {
+        return errorResponse(res, error.message, 500);
+      }
 };
 
 // Get replies for a comment

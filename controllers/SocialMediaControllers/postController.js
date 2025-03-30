@@ -9,7 +9,8 @@ const { getIo } = require('../../websocket/socket');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
- 
+const { createLikeNotification, createCommentNotification, createReplyNotification } = require('../../utils/notificationUtils');
+
 const SanghPost = require('../../models/SanghModels/sanghPostModel');
 const PanchPost = require('../../models/SanghModels/panchPostModel');
 const VyaparPost = require('../../models/VyaparModels/vyaparPostModel');
@@ -142,18 +143,16 @@ const toggleLike = [
     } else {
       post.likes.push(userId);
 
-      // Send a like notification
-      const notification = new Notification({
-        senderId: userId,
-        receiverId: post.user, 
-        type: 'like',
-        message: 'Someone liked your post.'
-      });
-      await notification.save();
-
-      // Emit the notification event to the receiver
-      const io = getIo();
-      io.to(post.user.toString()).emit('newNotification', notification);
+      // Create notification using the utility function
+      if (post.user.toString() !== userId) {
+        await createLikeNotification({
+          senderId: userId,
+          receiverId: post.user,
+          entityId: postId,
+          entityType: 'post',
+          senderName: req.user ? `${req.user.firstName} ${req.user.lastName}` : 'Someone'
+        });
+      }
     }
 
     await post.save();
@@ -318,18 +317,16 @@ const addComment = [
     await post.save();
     await post.populate('comments.user', 'firstName lastName profilePicture');
 
-    // Send a comment notification
-    const notification = new Notification({
-      senderId: userId,
-      receiverId: post.user,
-      type: 'comment',
-      message: 'Someone commented on your post.'
-    });
-    await notification.save();
-
-    // Emit the notification event to the receiver
-    const io = getIo();
-    io.to(post.user.toString()).emit('newNotification', notification);
+    // Create notification for the post owner if the commenter is not the owner
+    if (post.user.toString() !== userId) {
+      await createCommentNotification({
+        senderId: userId,
+        receiverId: post.user,
+        entityId: postId,
+        entityType: 'post',
+        senderName: req.user ? `${req.user.firstName} ${req.user.lastName}` : 'Someone'
+      });
+    }
 
     return successResponse(res, post, 'Comment added successfully', 200);
   })
@@ -365,19 +362,17 @@ const addReply = [
     await post.save();
     await post.populate('comments.replies.user', 'firstName lastName profilePicture');
 
-    // Send a reply notification
-    const notification = new Notification({
-      senderId: userId,
-      receiverId: comment.user,
-      type: 'reply',
-      message: 'Someone replied to your comment.'
-    });
-    await notification.save();
-
-    // Emit the notification event to the receiver
-    const io = getIo();
-    io.to(comment.user.toString()).emit('newNotification', notification);
-    
+    // Create notification for the comment owner if the replier is not the owner
+    if (comment.user.toString() !== userId) {
+      await createReplyNotification({
+        senderId: userId,
+        receiverId: comment.user,
+        entityId: commentId,
+        postId: postId,
+        entityType: 'post',
+        senderName: req.user ? `${req.user.firstName} ${req.user.lastName}` : 'Someone'
+      });
+    }
 
     return successResponse(res, newReply, 'Reply added successfully', 201);
   })

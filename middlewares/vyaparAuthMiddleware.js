@@ -1,7 +1,6 @@
 const JainVyapar = require('../models/VyaparModels/vyaparModel');
 const HierarchicalSangh = require('../models/SanghModels/hierarchicalSanghModel');
 const { errorResponse } = require('../utils/apiResponse');
-const UserRoleService = require('../services/userRoleService');
 
 // Verify business post management permissions
 const canManageBusinessPost = async (req, res, next) => {

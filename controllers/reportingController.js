@@ -18,7 +18,9 @@ exports.createReport = async (req, res) => {
       jainAadharCount,
       projects,
       events,
-      submittingSanghId
+      submittingSanghId,
+      visitsReceived,
+      visitsConducted
     } = req.body;
 
     // Basic validation
@@ -59,7 +61,10 @@ exports.createReport = async (req, res) => {
       jainAadharCount,
       projects,
       events,
-      submittedById: req.user._id
+      submittedById: req.user._id,
+      // Add official visits data if provided
+      ...(visitsReceived && { visitsReceived }),
+      ...(visitsConducted && { visitsConducted })
     });
 
     await newReport.save();
@@ -341,6 +346,142 @@ exports.deleteReport = async (req, res) => {
     return successResponse(res, 'Report deleted successfully');
   } catch (err) {
     console.error('Error deleting report:', err);
+    return errorResponse(res, 'Server error', 500);
+  }
+};
+
+// Get top performing Sanghs
+exports.getTopPerformers = async (req, res) => {
+  try {
+    const { level = 'all', period = 'month', limit = 3 } = req.query;
+    
+    // Determine time period for filtering
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth() + 1; // JS months are 0-indexed
+    const currentYear = currentDate.getFullYear();
+    
+    // Build date filter based on period
+    let dateFilter = {};
+    
+    if (period === 'month') {
+      dateFilter = { 
+        reportMonth: currentMonth, 
+        reportYear: currentYear 
+      };
+    } else if (period === 'quarter') {
+      // Calculate current quarter
+      const currentQuarter = Math.ceil(currentMonth / 3);
+      const startMonth = (currentQuarter - 1) * 3 + 1;
+      const endMonth = currentQuarter * 3;
+      
+      dateFilter = {
+        reportMonth: { $gte: startMonth, $lte: endMonth },
+        reportYear: currentYear
+      };
+    } else if (period === 'year') {
+      dateFilter = { reportYear: currentYear };
+    } else if (period === 'custom' && req.query.startDate && req.query.endDate) {
+      const startDate = new Date(req.query.startDate);
+      const endDate = new Date(req.query.endDate);
+      
+      dateFilter = {
+        createdAt: { $gte: startDate, $lte: endDate }
+      };
+    }
+    
+    // Build level filter if specified
+    let levelFilter = {};
+    if (level !== 'all') {
+      // Find Sanghs of the specified level
+      const sanghs = await HierarchicalSangh.find({ level });
+      const sanghIds = sanghs.map(sangh => sangh._id);
+      
+      levelFilter = { submittingSanghId: { $in: sanghIds } };
+    }
+    
+    // Combine filters
+    const filter = {
+      ...dateFilter,
+      ...levelFilter,
+      status: 'approved' // Only consider approved reports
+    };
+    
+    // Aggregation pipeline to calculate performance scores
+    const topPerformers = await Reporting.aggregate([
+      // Match reports based on filters
+      { $match: filter },
+      
+      // Group by submitting Sangh
+      { $group: {
+        _id: '$submittingSanghId',
+        totalJainAadharCount: { $sum: '$jainAadharCount' },
+        totalVisitsReceived: { $sum: '$visitsReceived.count' },
+        totalVisitsConducted: { $sum: '$visitsConducted.count' },
+        // Extract event count from events field (assuming it's a number or can be parsed)
+        // If events is stored as a string description, this will need adjustment
+        eventCount: { $sum: { $cond: [{ $isNumber: '$events.count' }, '$events.count', 1] } },
+        membershipCount: { $sum: { $cond: [{ $isNumber: '$membership.count' }, '$membership.count', 1] } },
+        reportCount: { $sum: 1 },
+        lastReport: { $max: '$createdAt' }
+      }},
+      
+      // Calculate performance score
+      { $addFields: {
+        // Weighted score calculation
+        // Adjust weights based on importance of each metric
+        performanceScore: {
+          $add: [
+            { $multiply: ['$totalJainAadharCount', 2] }, // Weight: 2
+            { $multiply: [{ $add: ['$totalVisitsReceived', '$totalVisitsConducted'] }, 1.5] }, // Weight: 1.5
+            { $multiply: ['$eventCount', 1.5] }, // Weight: 1.5
+            { $multiply: ['$membershipCount', 1] } // Weight: 1
+          ]
+        }
+      }},
+      
+      // Sort by performance score (descending)
+      { $sort: { performanceScore: -1 } },
+      
+      // Limit to requested number of results
+      { $limit: parseInt(limit) },
+      
+      // Lookup Sangh details
+      { $lookup: {
+        from: 'hierarchicalsanghs',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'sanghDetails'
+      }},
+      
+      // Unwind Sangh details
+      { $unwind: '$sanghDetails' },
+      
+      // Project final result
+      { $project: {
+        _id: 1,
+        sanghName: '$sanghDetails.name',
+        sanghLevel: '$sanghDetails.level',
+        location: {
+          state: '$sanghDetails.state',
+          district: '$sanghDetails.district',
+          city: '$sanghDetails.city'
+        },
+        performanceScore: 1,
+        metrics: {
+          jainAadharCount: '$totalJainAadharCount',
+          visitsReceived: '$totalVisitsReceived',
+          visitsConducted: '$totalVisitsConducted',
+          eventCount: '$eventCount',
+          membershipCount: '$membershipCount'
+        },
+        reportCount: 1,
+        lastReportDate: '$lastReport'
+      }}
+    ]);
+    
+    return successResponse(res, 'Top performing Sanghs retrieved successfully', topPerformers);
+  } catch (err) {
+    console.error('Error getting top performers:', err);
     return errorResponse(res, 'Server error', 500);
   }
 };

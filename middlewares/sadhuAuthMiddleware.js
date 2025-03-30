@@ -1,7 +1,6 @@
 const Sadhu = require('../models/SadhuModels/sadhuModel');
 const HierarchicalSangh = require('../models/SanghModels/hierarchicalSanghModel');
 const { errorResponse } = require('../utils/apiResponse');
-const UserRoleService = require('../services/userRoleService');
 
 // Verify sadhu using JWT token and role
 const verifySadhuCredentials = async (req, res, next) => {

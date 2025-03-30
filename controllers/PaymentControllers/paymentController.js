@@ -1,14 +1,13 @@
 const Payment = require('../../models/PaymentModels/paymentModel');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const razorpayService = require('../../services/razorpayService');
+const pricingService = require('../../services/pricingService');
 const JainVyapar = require('../../models/VyaparModels/vyaparModel');
 const VyavahikBiodata = require('../../models/VyavahikBiodata');
 const User = require('../../models/UserRegistrationModels/userModel');
 
 // Constants for payment amounts
 const PAYMENT_AMOUNTS = {
-    vyapar: 999 * 100, // ₹999 in paise
-    biodata: 499 * 100, // ₹499 in paise
     sangh: 1999 * 100,
     panch: 499 * 100,
     tirth: 1499 * 100,
@@ -30,6 +29,9 @@ const createVyaparPaymentOrder = async (req, res) => {
             return errorResponse(res, 'Missing required business details', 400);
         }
         
+        // Get current price for vyapar from database
+        const amount = await pricingService.getPrice('vyapar');
+        
         // Create a shorter receipt ID (max 40 chars)
         // Using timestamp + random number instead of full UUID
         const timestamp = Date.now().toString();
@@ -38,7 +40,7 @@ const createVyaparPaymentOrder = async (req, res) => {
         
         // Create Razorpay order
         const order = await razorpayService.createOrder({
-            amount: PAYMENT_AMOUNTS.vyapar,
+            amount: amount,
             receipt,
             notes: {
                 entityType: 'vyapar',
@@ -90,6 +92,9 @@ const createBiodataPaymentOrder = async (req, res) => {
             return errorResponse(res, 'Missing required biodata details', 400);
         }
         
+        // Get current price for biodata from database
+        const amount = await pricingService.getPrice('biodata');
+        
         // Create a shorter receipt ID (max 40 chars)
         const timestamp = Date.now().toString();
         const randomNum = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
@@ -97,7 +102,7 @@ const createBiodataPaymentOrder = async (req, res) => {
         
         // Create Razorpay order
         const order = await razorpayService.createOrder({
-            amount: PAYMENT_AMOUNTS.biodata,
+            amount: amount,
             receipt,
             notes: {
                 entityType: 'biodata',

@@ -7,7 +7,8 @@ const {
   deleteReport,
   getSubmittedReports,
   getReceivedReports,
-  updateReportStatus
+  updateReportStatus,
+  getTopPerformers
 } = require('../controllers/reportingController');
 const { authMiddleware } = require('../middlewares/authMiddlewares');
 const { validateRequest } = require('../middlewares/validationMiddleware');
@@ -32,7 +33,19 @@ const reportValidation = [
   check('jainAadharCount').isInt({ min: 0 }).withMessage('Jain Aadhar count must be a positive number'),
   check('projects').notEmpty().withMessage('Projects information is required'),
   check('events').notEmpty().withMessage('Events information is required'),
-  check('submittingSanghId').notEmpty().withMessage('Submitting Sangh ID is required')
+  check('submittingSanghId').notEmpty().withMessage('Submitting Sangh ID is required'),
+  // Optional validation for visits received
+  check('visitsReceived.count').optional().isInt({ min: 0 }).withMessage('Visits received count must be a positive number'),
+  check('visitsReceived.details.*.visitDate').optional().isISO8601().withMessage('Visit date must be a valid date'),
+  check('visitsReceived.details.*.visitorSanghLevel').optional().isIn(['national', 'state', 'district', 'city', 'area']).withMessage('Invalid visitor Sangh level'),
+  check('visitsReceived.details.*.visitorName').optional().notEmpty().withMessage('Visitor name is required'),
+  check('visitsReceived.details.*.visitorRole').optional().isIn(['president', 'secretary', 'treasurer', 'other']).withMessage('Invalid visitor role'),
+  check('visitsReceived.details.*.purpose').optional().notEmpty().withMessage('Visit purpose is required'),
+  // Optional validation for visits conducted
+  check('visitsConducted.count').optional().isInt({ min: 0 }).withMessage('Visits conducted count must be a positive number'),
+  check('visitsConducted.sanghs.*.sanghLevel').optional().isIn(['national', 'state', 'district', 'city', 'area']).withMessage('Invalid Sangh level'),
+  check('visitsConducted.sanghs.*.visitDate').optional().isISO8601().withMessage('Visit date must be a valid date'),
+  check('visitsConducted.sanghs.*.purpose').optional().notEmpty().withMessage('Visit purpose is required')
 ];
 
 const statusValidation = [
@@ -47,6 +60,9 @@ router.get('/submitted/:sanghId', getSubmittedReports);
 
 // GET: Get reports received by a specific Sangh
 router.get('/received/:sanghId', getReceivedReports);
+
+// GET: Get top performing Sanghs
+router.get('/top-performers', getTopPerformers);
 
 // GET: Get a single report by ID
 router.get('/:id', getReportById);

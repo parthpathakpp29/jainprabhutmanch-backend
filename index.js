@@ -26,9 +26,7 @@ const granthRoutes = require('./routes/jainGranthRoutes');
 const jainItihasRoutes = require('./routes/jainItihasRoutes');
 const storyRoutes = require('./routes/SocialMediaRoutes/storyRoutes');
 const notificationRoutes = require('./routes/SocialMediaRoutes/notificationRoutes');
-const Story = require('./models/SocialMediaModels/storyModel');
 const govtYojanaRoutes = require('./routes/govtYojanaRoutes');
-const s3Client = require('./config/s3Config');
 const { initializeWebSocket, getIo } = require('./websocket/socket');
 const { scheduleStoryCleanup } = require('./jobs/storyCleanupJob');
 const hierarchicalSanghRoutes = require('./routes/SanghRoutes/hierarchicalSanghRoute');
@@ -112,8 +110,7 @@ app.use('/api/suggestion-complaint', suggestionComplaintRoutes);
 app.use("/api/granth", [authMiddleware, isAdmin], granthRoutes);
 app.use("/api/jainitihas", [authMiddleware, isAdmin], jainItihasRoutes);
 app.use('/api/yojana', [authMiddleware, isAdmin], govtYojanaRoutes);
-
-
+app.use('/api/pricing', require('./routes/PaymentRoutes/pricingRoutes'));
 
 // Error handling
 app.use(notFound);

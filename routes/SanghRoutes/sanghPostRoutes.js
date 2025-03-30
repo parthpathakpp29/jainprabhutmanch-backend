@@ -5,10 +5,10 @@ const {
   getSanghPosts, 
   getAllSanghPosts,
   toggleLikeSanghPost,
-  commentOnSanghPost,
+  addCommentToSanghPost,
   deleteSanghPost,
   updateSanghPost,
-  addReplyToSanghPost,
+  addReplyToComment,
   getRepliesForSanghPost,
   deleteMediaItemFromSanghPost,
   hideSanghPost,
@@ -58,32 +58,34 @@ router.put(
   toggleLikeSanghPost
 );
 
-// Comment on a Sangh post
+// Add comment to a post
 router.post(
-  '/posts/:postId/comment',
+  '/posts/:postId/comments',
   [
     param('postId').isMongoId().withMessage('Invalid post ID'),
     body('text').notEmpty().withMessage('Comment text is required')
       .isLength({ max: 500 }).withMessage('Comment cannot exceed 500 characters')
   ],
-  commentOnSanghPost
+  addCommentToSanghPost
 );
 
-// Reply to a comment
+// Add reply to a comment
 router.post(
-  '/comments/reply',
+  '/posts/:postId/comments/:commentId/replies',
   [
-    body('commentId').isMongoId().withMessage('Invalid comment ID'),
-    body('replyText').notEmpty().withMessage('Reply text is required')
+    param('postId').isMongoId().withMessage('Invalid post ID'),
+    param('commentId').isMongoId().withMessage('Invalid comment ID'),
+    body('text').notEmpty().withMessage('Reply text is required')
       .isLength({ max: 500 }).withMessage('Reply cannot exceed 500 characters')
   ],
-  addReplyToSanghPost
+  addReplyToComment
 );
 
 // Get replies for a comment
 router.get(
-  '/comments/:commentId/replies',
+  '/posts/:postId/comments/:commentId/replies',
   [
+    param('postId').isMongoId().withMessage('Invalid post ID'),
     param('commentId').isMongoId().withMessage('Invalid comment ID')
   ],
   getRepliesForSanghPost

@@ -9,7 +9,8 @@ const generateToken = (user) => {
       sanghRoles: user.sanghRoles || [],
       panchRoles: user.panchRoles || [],
       tirthRoles: user.tirthRoles || [],
-      vyaparRoles: user.vyaparRoles || []
+      vyaparRoles: user.vyaparRoles || [],
+      sadhuRoles: user.sadhuRoles || []
     },
     process.env.JWT_SECRET
     // No expiresIn option = token never expires

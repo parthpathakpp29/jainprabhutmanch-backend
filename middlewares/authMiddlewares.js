@@ -285,14 +285,6 @@ const verifySadhuRole = asyncHandler(async (req, res, next) => {
         
         // If user is superadmin or admin, grant full access
         if (user.role === 'superadmin' || user.role === 'admin') {
-            const sadhu = await Sadhu.findById(sadhuId);
-            if (!sadhu) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Sadhu not found'
-                });
-            }
-            req.sadhu = sadhu;
             return next();
         }
         
@@ -309,15 +301,6 @@ const verifySadhuRole = asyncHandler(async (req, res, next) => {
             });
         }
         
-        const sadhu = await Sadhu.findById(sadhuId);
-        if (!sadhu) {
-            return res.status(404).json({
-                success: false,
-                message: 'Sadhu not found'
-            });
-        }
-        
-        req.sadhu = sadhu;
         next();
     } catch (error) {
         return res.status(500).json({

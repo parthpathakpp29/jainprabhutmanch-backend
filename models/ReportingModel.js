@@ -1,5 +1,38 @@
 const mongoose = require('mongoose');
 
+// Define a schema for visit details
+const visitDetailSchema = new mongoose.Schema({
+  visitDate: {
+    type: Date,
+    required: true
+  },
+  visitorSanghId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'HierarchicalSangh'
+  },
+  visitorSanghLevel: {
+    type: String,
+    enum: ['national', 'state', 'district', 'city', 'area'],
+    required: true
+  },
+  visitorName: {
+    type: String,
+    required: true
+  },
+  visitorRole: {
+    type: String,
+    enum: ['president', 'secretary', 'treasurer', 'other'],
+    required: true
+  },
+  purpose: {
+    type: String,
+    required: true
+  },
+  outcome: {
+    type: String
+  }
+}, { _id: true });
+
 const reportingSchema = new mongoose.Schema(
   {
     // Sangh Information
@@ -52,6 +85,42 @@ const reportingSchema = new mongoose.Schema(
       required: true,
       default: 0
     },
+    // Official Visits Information
+    visitsReceived: {
+      count: {
+        type: Number,
+        default: 0
+      },
+      details: [visitDetailSchema]
+    },
+    visitsConducted: {
+      count: {
+        type: Number,
+        default: 0
+      },
+      sanghs: [{
+        sanghId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'HierarchicalSangh'
+        },
+        sanghName: {
+          type: String
+        },
+        sanghLevel: {
+          type: String,
+          enum: ['national', 'state', 'district', 'city', 'area']
+        },
+        visitDate: {
+          type: Date
+        },
+        purpose: {
+          type: String
+        },
+        outcome: {
+          type: String
+        }
+      }]
+    },
     // Membership Information
     membership: { 
       type: String, 
@@ -100,5 +169,8 @@ reportingSchema.index({ submittedById: 1 });
 // Compound indexes
 reportingSchema.index({ recipientSanghId: 1, status: 1 });
 reportingSchema.index({ reportMonth: 1, reportYear: 1, status: 1 });
+// Indexes for official visits
+reportingSchema.index({ 'visitsReceived.count': 1 });
+reportingSchema.index({ 'visitsConducted.count': 1 });
 
 module.exports = mongoose.model('Reporting', reportingSchema);

@@ -4,9 +4,7 @@ const asyncHandler = require('express-async-handler');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
-const Notification = require('../../models/SocialMediaModels/notificationModel');
-const { getIo } = require('../../websocket/socket');
-const { validationResult } = require('express-validator');
+const { createLikeNotification, createCommentNotification, createReplyNotification } = require('../../utils/notificationUtils');
 
 // Create a post as Sangh
 const createSanghPost = asyncHandler(async (req, res) => {
@@ -155,13 +153,26 @@ const toggleLikeSanghPost = asyncHandler(async (req, res) => {
     const { postId } = req.params;
     const userId = req.user._id;
     
-    const post = await SanghPost.findById(postId);
+    const post = await SanghPost.findById(postId)
+      .populate('postedByUserId', 'firstName lastName');
+    
     if (!post) {
       return errorResponse(res, 'Post not found', 404);
     }
     
     const result = post.toggleLike(userId);
     await post.save();
+    
+    // Create notification if the post was liked (not unliked)
+    if (result.isLiked && post.postedByUserId._id.toString() !== userId.toString()) {
+      await createLikeNotification({
+        senderId: userId,
+        receiverId: post.postedByUserId._id,
+        entityId: postId,
+        entityType: 'sanghPost',
+        senderName: `${req.user.firstName} ${req.user.lastName}`
+      });
+    }
     
     return successResponse(res, result, `Post ${result.isLiked ? 'liked' : 'unliked'} successfully`);
   } catch (error) {
@@ -170,7 +181,7 @@ const toggleLikeSanghPost = asyncHandler(async (req, res) => {
 });
 
 // Add comment to a Sangh post
-const commentOnSanghPost = asyncHandler(async (req, res) => {
+const addCommentToSanghPost = asyncHandler(async (req, res) => {
   try {
     const { postId } = req.params;
     const { text } = req.body;
@@ -180,7 +191,9 @@ const commentOnSanghPost = asyncHandler(async (req, res) => {
       return errorResponse(res, 'Comment text is required', 400);
     }
     
-    const post = await SanghPost.findById(postId);
+    const post = await SanghPost.findById(postId)
+      .populate('postedByUserId', 'firstName lastName');
+    
     if (!post) {
       return errorResponse(res, 'Post not found', 404);
     }
@@ -188,13 +201,80 @@ const commentOnSanghPost = asyncHandler(async (req, res) => {
     const comment = post.addComment(userId, text);
     await post.save();
     
-    // Populate user details in the comment
-    const populatedPost = await SanghPost.findById(postId)
-      .populate('comments.user', 'firstName lastName fullName profilePicture');
+    // Populate user info for the new comment
+    await post.populate('comments.user', 'firstName lastName profilePicture');
+    const newComment = post.comments.id(comment._id);
     
-    const populatedComment = populatedPost.comments.id(comment._id);
+    // Create notification for post owner (if commenter is not the owner)
+    if (post.postedByUserId._id.toString() !== userId.toString()) {
+      await createCommentNotification({
+        senderId: userId,
+        receiverId: post.postedByUserId._id,
+        entityId: postId,
+        entityType: 'sanghPost',
+        senderName: `${req.user.firstName} ${req.user.lastName}`
+      });
+    }
     
-    return successResponse(res, populatedComment, 'Comment added successfully');
+    return successResponse(res, {
+      comment: newComment,
+      commentCount: post.comments.length
+    }, 'Comment added successfully');
+  } catch (error) {
+    return errorResponse(res, error.message, 500);
+  }
+});
+
+// Add reply to a comment
+const addReplyToComment = asyncHandler(async (req, res) => {
+  try {
+    const { postId, commentId } = req.params;
+    const { text } = req.body;
+    const userId = req.user._id;
+    
+    if (!text) {
+      return errorResponse(res, 'Reply text is required', 400);
+    }
+    
+    const post = await SanghPost.findById(postId);
+    if (!post) {
+      return errorResponse(res, 'Post not found', 404);
+    }
+    
+    const comment = post.comments.id(commentId);
+    if (!comment) {
+      return errorResponse(res, 'Comment not found', 404);
+    }
+    
+    comment.replies.push({
+      user: userId,
+      text,
+      createdAt: new Date()
+    });
+    
+    await post.save();
+    
+    // Populate user info for the new reply
+    await post.populate('comments.replies.user', 'firstName lastName profilePicture');
+    const updatedComment = post.comments.id(commentId);
+    const newReply = updatedComment.replies[updatedComment.replies.length - 1];
+    
+    // Create notification for comment owner (if replier is not the comment owner)
+    if (comment.user.toString() !== userId.toString()) {
+      await createReplyNotification({
+        senderId: userId,
+        receiverId: comment.user,
+        entityId: commentId,
+        postId: postId,
+        entityType: 'sanghPost',
+        senderName: `${req.user.firstName} ${req.user.lastName}`
+      });
+    }
+    
+    return successResponse(res, {
+      reply: newReply,
+      replyCount: updatedComment.replies.length
+    }, 'Reply added successfully');
   } catch (error) {
     return errorResponse(res, error.message, 500);
   }
@@ -320,70 +400,6 @@ const updateSanghPost = asyncHandler(async (req, res) => {
       });
       await Promise.all(deletePromises);
     }
-    return errorResponse(res, error.message, 500);
-  }
-});
-
-// Add reply to a comment
-const addReplyToSanghPost = asyncHandler(async (req, res) => {
-  try {
-    const { commentId, replyText } = req.body;
-    const userId = req.user._id;
-    
-    if (!replyText) {
-      return errorResponse(res, 'Reply text is required', 400);
-    }
-    
-    const post = await SanghPost.findOne({ 'comments._id': commentId });
-    if (!post) {
-      return errorResponse(res, 'Post or comment not found', 404);
-    }
-    
-    const comment = post.comments.id(commentId);
-    if (!comment) {
-      return errorResponse(res, 'Comment not found', 404);
-    }
-    
-    // Initialize replies array if it doesn't exist
-    if (!comment.replies) {
-      comment.replies = [];
-    }
-    
-    const newReply = {
-      user: userId,
-      text: replyText,
-      createdAt: new Date()
-    };
-    
-    comment.replies.push(newReply);
-    await post.save();
-    
-    // Populate user details
-    await post.populate('comments.replies.user', 'firstName lastName fullName profilePicture');
-    const populatedReply = comment.replies[comment.replies.length - 1];
-    
-    // Send notification
-    try {
-      const notification = new Notification({
-        senderId: userId,
-        receiverId: comment.user,
-        type: 'reply',
-        message: 'Someone replied to your comment on a Sangh post.'
-      });
-      await notification.save();
-      
-      // Emit notification event
-      const io = getIo();
-      if (io) {
-        io.to(comment.user.toString()).emit('newNotification', notification);
-      }
-    } catch (notifError) {
-      console.error('Error sending notification:', notifError);
-      // Continue execution even if notification fails
-    }
-    
-    return successResponse(res, populatedReply, 'Reply added successfully', 201);
-  } catch (error) {
     return errorResponse(res, error.message, 500);
   }
 });
@@ -514,10 +530,10 @@ module.exports = {
   getSanghPosts,
   getAllSanghPosts,
   toggleLikeSanghPost,
-  commentOnSanghPost,
+  addCommentToSanghPost,
   deleteSanghPost,
   updateSanghPost,
-  addReplyToSanghPost,
+  addReplyToComment,
   getRepliesForSanghPost,
   deleteMediaItemFromSanghPost,
   hideSanghPost,

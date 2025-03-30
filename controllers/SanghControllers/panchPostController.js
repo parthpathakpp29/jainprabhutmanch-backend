@@ -7,6 +7,7 @@ const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
 const Notification = require('../../models/SocialMediaModels/notificationModel');
 const { getIo } = require('../../websocket/socket');
 const { validationResult } = require('express-validator');
+const { createLikeNotification, createCommentNotification, createReplyNotification } = require('../../utils/notificationUtils');
 
 // Create a post as Panch member
 const createPanchPost = asyncHandler(async (req, res) => {
@@ -157,13 +158,26 @@ const toggleLikePanchPost = asyncHandler(async (req, res) => {
     const { postId } = req.params;
     const userId = req.user._id;
     
-    const post = await PanchPost.findById(postId);
+    const post = await panchPost.findById(postId)
+      .populate('postedByUserId', 'firstName lastName');
+    
     if (!post) {
       return errorResponse(res, 'Post not found', 404);
     }
     
     const result = post.toggleLike(userId);
     await post.save();
+    
+    // Create notification if the post was liked (not unliked)
+    if (result.isLiked && post.postedByUserId._id.toString() !== userId.toString()) {
+      await createLikeNotification({
+        senderId: userId,
+        receiverId: post.postedByUserId._id,
+        entityId: postId,
+        entityType: 'panchPost',
+        senderName: `${req.user.firstName} ${req.user.lastName}`
+      });
+    }
     
     return successResponse(res, result, `Post ${result.isLiked ? 'liked' : 'unliked'} successfully`);
   } catch (error) {
@@ -182,7 +196,9 @@ const commentOnPanchPost = asyncHandler(async (req, res) => {
       return errorResponse(res, 'Comment text is required', 400);
     }
     
-    const post = await PanchPost.findById(postId);
+    const post = await PanchPost.findById(postId)
+      .populate('postedByUserId', 'firstName lastName');
+    
     if (!post) {
       return errorResponse(res, 'Post not found', 404);
     }
@@ -190,13 +206,25 @@ const commentOnPanchPost = asyncHandler(async (req, res) => {
     const comment = post.addComment(userId, text);
     await post.save();
     
-    // Populate user details in the comment
-    const populatedPost = await PanchPost.findById(postId)
-      .populate('comments.user', 'firstName lastName fullName profilePicture');
+    // Populate user info for the new comment
+    await post.populate('comments.user', 'firstName lastName profilePicture');
+    const newComment = post.comments.id(comment._id);
     
-    const populatedComment = populatedPost.comments.id(comment._id);
+    // Create notification for post owner (if commenter is not the owner)
+    if (post.postedByUserId._id.toString() !== userId.toString()) {
+      await createCommentNotification({
+        senderId: userId,
+        receiverId: post.postedByUserId._id,
+        entityId: postId,
+        entityType: 'panchPost',
+        senderName: `${req.user.firstName} ${req.user.lastName}`
+      });
+    }
     
-    return successResponse(res, populatedComment, 'Comment added successfully');
+    return successResponse(res, {
+      comment: newComment,
+      commentCount: post.comments.length
+    }, 'Comment added successfully');
   } catch (error) {
     return errorResponse(res, error.message, 500);
   }
@@ -359,16 +387,17 @@ const getPanchMemberAccessKey = asyncHandler(async (req, res) => {
 // Add reply to a comment
 const addReplyToPanchPost = asyncHandler(async (req, res) => {
   try {
-    const { commentId, replyText } = req.body;
+    const { postId, commentId } = req.params;
+    const { text } = req.body;
     const userId = req.user._id;
     
-    if (!replyText) {
+    if (!text) {
       return errorResponse(res, 'Reply text is required', 400);
     }
     
-    const post = await PanchPost.findOne({ 'comments._id': commentId });
+    const post = await PanchPost.findById(postId);
     if (!post) {
-      return errorResponse(res, 'Post or comment not found', 404);
+      return errorResponse(res, 'Post not found', 404);
     }
     
     const comment = post.comments.id(commentId);
@@ -376,45 +405,35 @@ const addReplyToPanchPost = asyncHandler(async (req, res) => {
       return errorResponse(res, 'Comment not found', 404);
     }
     
-    // Initialize replies array if it doesn't exist
-    if (!comment.replies) {
-      comment.replies = [];
-    }
-    
-    const newReply = {
+    comment.replies.push({
       user: userId,
-      text: replyText,
+      text,
       createdAt: new Date()
-    };
+    });
     
-    comment.replies.push(newReply);
     await post.save();
     
-    // Populate user details
-    await post.populate('comments.replies.user', 'firstName lastName fullName profilePicture');
-    const populatedReply = comment.replies[comment.replies.length - 1];
+    // Populate user info for the new reply
+    await post.populate('comments.replies.user', 'firstName lastName profilePicture');
+    const updatedComment = post.comments.id(commentId);
+    const newReply = updatedComment.replies[updatedComment.replies.length - 1];
     
-    // Send notification
-    try {
-      const notification = new Notification({
+    // Create notification for comment owner (if replier is not the comment owner)
+    if (comment.user.toString() !== userId.toString()) {
+      await createReplyNotification({
         senderId: userId,
         receiverId: comment.user,
-        type: 'reply',
-        message: 'Someone replied to your comment on a Panch post.'
+        entityId: commentId,
+        postId: postId,
+        entityType: 'panchPost',
+        senderName: `${req.user.firstName} ${req.user.lastName}`
       });
-      await notification.save();
-      
-      // Emit notification event
-      const io = getIo();
-      if (io) {
-        io.to(comment.user.toString()).emit('newNotification', notification);
-      }
-    } catch (notifError) {
-      console.error('Error sending notification:', notifError);
-      // Continue execution even if notification fails
     }
     
-    return successResponse(res, populatedReply, 'Reply added successfully', 201);
+    return successResponse(res, {
+      reply: newReply,
+      replyCount: updatedComment.replies.length
+    }, 'Reply added successfully');
   } catch (error) {
     return errorResponse(res, error.message, 500);
   }
