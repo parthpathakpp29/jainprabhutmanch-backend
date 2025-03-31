@@ -13,7 +13,7 @@ const generateToken = (user) => {
       sadhuRoles: user.sadhuRoles || []
     },
     process.env.JWT_SECRET
-    // No expiresIn option = token never expires
+ 
   );
 };
 

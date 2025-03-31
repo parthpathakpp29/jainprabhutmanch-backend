@@ -1,4 +1,4 @@
-const VyavahikBiodata = require('../models/VyavahikBiodata');
+const VyavahikBiodata = require('../../models/BioDataModels/VyavahikBiodata');
 // Create API
 
 /**

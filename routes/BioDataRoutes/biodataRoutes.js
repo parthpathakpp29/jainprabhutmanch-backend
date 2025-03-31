@@ -6,14 +6,14 @@ const {
   getBiodata, 
   getAllBiodatas,
   checkUserBiodata
-} = require('../controllers/vyavahikBiodataController');
+} = require('../../controllers/BioDataContollers/vyavahikBiodataController');
 const { 
   createBiodataPaymentOrder,
   verifyBiodataPayment,
   completeBiodataRegistration
-} = require('../controllers/PaymentControllers/paymentController');
-const upload = require('../middlewares/uploadMiddleware');
-const { authMiddleware } = require('../middlewares/authMiddlewares');
+} = require('../../controllers/PaymentControllers/paymentController');
+const upload = require('../../middlewares/uploadMiddleware');
+const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const router = express.Router();
 
 // Enable authentication for all routes

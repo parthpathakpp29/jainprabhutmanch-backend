@@ -3,7 +3,7 @@ const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const razorpayService = require('../../services/razorpayService');
 const pricingService = require('../../services/pricingService');
 const JainVyapar = require('../../models/VyaparModels/vyaparModel');
-const VyavahikBiodata = require('../../models/VyavahikBiodata');
+const VyavahikBiodata = require('../../models/BioDataModels/VyavahikBiodata');
 const User = require('../../models/UserRegistrationModels/userModel');
 
 // Constants for payment amounts
@@ -11,7 +11,7 @@ const PAYMENT_AMOUNTS = {
     sangh: 1999 * 100,
     panch: 499 * 100,
     tirth: 1499 * 100,
-    sadhu: 0 // Free for sadhus
+    sadhu: 0 
 };
 
 /**

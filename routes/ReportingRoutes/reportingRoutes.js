@@ -9,9 +9,9 @@ const {
   getReceivedReports,
   updateReportStatus,
   getTopPerformers
-} = require('../controllers/reportingController');
-const { authMiddleware } = require('../middlewares/authMiddlewares');
-const { validateRequest } = require('../middlewares/validationMiddleware');
+} = require('../../controllers/ReportingControllers/reportingController');
+const { authMiddleware } = require('../../middlewares/authMiddlewares');
+const { validateRequest } = require('../../middlewares/validationMiddleware');
 const { check } = require('express-validator');
 
 const router = express.Router();

@@ -1,6 +1,6 @@
-// controllers/rojgarController.js
-const Rojgar = require("../models/RojgarModel");
-const RojgarRecruitee = require("../models/RojgarRecruiteeModel")
+// controllers/RojgarControllers/rojgarController.js
+const Rojgar = require("../../models/RojagarModels/RojgarModel");
+const RojgarRecruitee = require("../../models/RojagarModels/RojgarRecruiteeModel")
 // Create a new job
 exports.createJob = async (req, res) => {
   try {

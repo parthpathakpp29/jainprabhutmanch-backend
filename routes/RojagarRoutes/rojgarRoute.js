@@ -1,8 +1,8 @@
-// routes/rojgarRoute.js
+// routes/RojagarRoutes/rojgarRoute.js
 const express = require("express");
-const { createJob, getAllJobs, getJobById, updateJob, deleteJob, createRecruitee } = require("../controllers/rojgarController");
+const { createJob, getAllJobs, getJobById, updateJob, deleteJob, createRecruitee } = require("../../controllers/RojgarControllers/rojgarController");
 const router = express.Router();
-const upload = require("../middlewares/uploadMiddleware");
+const upload = require("../../middlewares/uploadMiddleware");
 
 // Routes for job operations
 router.post("/create", upload.single("jobPost"), createJob);

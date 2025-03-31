@@ -1,6 +1,6 @@
-const Reporting = require('../models/ReportingModel');
-const HierarchicalSangh = require('../models/SanghModels/hierarchicalSanghModel');
-const { successResponse, errorResponse } = require('../utils/apiResponse');
+const Reporting = require('../../models/ReportingModels/ReportingModel');
+const HierarchicalSangh = require('../../models/SanghModels/hierarchicalSanghModel');
+const { successResponse, errorResponse } = require('../../utils/apiResponse');
 
 // Create a new report
 exports.createReport = async (req, res) => {

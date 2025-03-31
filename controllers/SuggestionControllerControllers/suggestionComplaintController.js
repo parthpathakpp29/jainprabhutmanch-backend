@@ -1,7 +1,7 @@
-const SuggestionComplaint = require('../models/SuggestionComplaint');
-const User = require('../models/UserRegistrationModels/userModel');
-const HierarchicalSangh = require('../models/SanghModels/hierarchicalSanghModel');
-const { successResponse, errorResponse } = require('../utils/apiResponse');
+const SuggestionComplaint = require('../../models/SuggestionComplaintModels/SuggestionComplaint');
+const User = require('../../models/UserRegistrationModels/userModel');
+const HierarchicalSangh = require('../../models/SanghModels/hierarchicalSanghModel');
+const { successResponse, errorResponse } = require('../../utils/apiResponse');
 
 // Create Suggestion / Complaint
 exports.createSuggestionComplaint = async (req, res) => {

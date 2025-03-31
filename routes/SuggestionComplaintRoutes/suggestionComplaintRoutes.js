@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const suggestionComplaintController = require('../controllers/suggestionComplaintController');
-const { authMiddleware } = require('../middlewares/authMiddlewares');
+const suggestionComplaintController = require('../../controllers/SuggestionControllerControllers/suggestionComplaintController');
+const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const { body, param, query } = require('express-validator');
-const { validateRequest } = require('../middlewares/validationMiddleware');
+const { validateRequest } = require('../../middlewares/validationMiddleware');
 
 // Apply authentication to all routes
 router.use(authMiddleware);
