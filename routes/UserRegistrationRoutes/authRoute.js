@@ -7,7 +7,8 @@ const {
     loginUser, 
     logoutUser,
     uploadProfilePicture,
-    skipProfilePicture
+    skipProfilePicture,
+    searchUsers
 } = require('../../controllers/UserRegistrationControllers/userController');
 const { authMiddleware, checkAccess } = require('../../middlewares/authMiddlewares');
 const upload = require('../../middlewares/uploadMiddleware');
@@ -97,5 +98,8 @@ router.post(
     '/skip-profile-picture',
     skipProfilePicture
 );
+
+// Search users endpoint for suggestion/complaint recipient selection
+router.get('/search', searchUsers);
 
 module.exports = router;

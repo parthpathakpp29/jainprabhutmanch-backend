@@ -345,6 +345,41 @@ const logoutUser = asyncHandler(async (req, res) => {
     }
 });
 
+// Search users by name, email, or phone - for suggestion/complaint recipient selection
+const searchUsers = asyncHandler(async (req, res) => {
+    try {
+        const { query } = req.query;
+        
+        if (!query || query.length < 3) {
+            return errorResponse(res, 'Search query must be at least 3 characters', 400);
+        }
+        
+        const users = await User.find({
+            $or: [
+                { firstName: { $regex: query, $options: 'i' } },
+                { lastName: { $regex: query, $options: 'i' } },
+                { phoneNumber: { $regex: query, $options: 'i' } },
+                { email: { $regex: query, $options: 'i' } }
+            ]
+        }).select('_id firstName lastName phoneNumber email roles profilePicture')
+          .limit(10);
+        
+        // Format user data for frontend
+        const formattedUsers = users.map(user => ({
+            _id: user._id,
+            name: `${user.firstName} ${user.lastName}`,
+            phone: user.phoneNumber,
+            email: user.email || '',
+            roles: user.roles || [],
+            profilePicture: user.profilePicture || ''
+        }));
+        
+        return successResponse(res, formattedUsers, 'Users retrieved successfully');
+    } catch (error) {
+        return errorResponse(res, error.message, 500);
+    }
+});
+
 module.exports = {
     registerUser,
     loginUser,
@@ -353,5 +388,6 @@ module.exports = {
     updateUserById,
     uploadProfilePicture,
     skipProfilePicture,
-    logoutUser
+    logoutUser,
+    searchUsers
 };
