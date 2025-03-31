@@ -4,9 +4,11 @@ const notificationSchema = new mongoose.Schema(
   {
     senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     receiverId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    type: { type: String, enum: ['new_follower', 'like', 'comment', 'reply'], required: true },
+    type: { type: String, enum: ['new_follower', 'like', 'comment', 'reply', 'suggestion', 'complaint'], required: true },
     message: { type: String, required: true },
     isRead: { type: Boolean, default: false, index: true }, 
+    entityId: { type: mongoose.Schema.Types.ObjectId, refPath: 'entityType' },
+    entityType: { type: String, enum: ['Post', 'SanghPost', 'Comment', 'SuggestionComplaint'] }
   },
   { timestamps: true }
 );

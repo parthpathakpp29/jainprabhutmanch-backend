@@ -109,9 +109,63 @@ const createReplyNotification = async (data) => {
   });
 };
 
+/**
+ * Create suggestion notification
+ * @param {Object} data - Suggestion notification data
+ * @param {string} data.senderId - User who submitted the suggestion
+ * @param {string} data.receiverId - User who will receive the suggestion
+ * @param {string} data.entityId - Suggestion ID
+ * @param {string} data.subject - Subject of the suggestion
+ * @param {string} data.senderName - Name of the user who submitted
+ * @returns {Promise<Object|null>} The created notification or null if error
+ */
+const createSuggestionNotification = async (data) => {
+  try {
+    return await createNotification({
+      senderId: data.senderId,
+      receiverId: data.receiverId,
+      type: 'suggestion',
+      message: `${data.senderName} has sent you a suggestion: "${data.subject}"`,
+      entityId: data.entityId,
+      entityType: 'SuggestionComplaint'
+    });
+  } catch (error) {
+    console.error('Error creating suggestion notification:', error);
+    return null;
+  }
+};
+
+/**
+ * Create complaint notification
+ * @param {Object} data - Complaint notification data
+ * @param {string} data.senderId - User who submitted the complaint
+ * @param {string} data.receiverId - User who will receive the complaint
+ * @param {string} data.entityId - Complaint ID
+ * @param {string} data.subject - Subject of the complaint
+ * @param {string} data.senderName - Name of the user who submitted
+ * @returns {Promise<Object|null>} The created notification or null if error
+ */
+const createComplaintNotification = async (data) => {
+  try {
+    return await createNotification({
+      senderId: data.senderId,
+      receiverId: data.receiverId,
+      type: 'complaint',
+      message: `${data.senderName} has filed a complaint: "${data.subject}"`,
+      entityId: data.entityId,
+      entityType: 'SuggestionComplaint'
+    });
+  } catch (error) {
+    console.error('Error creating complaint notification:', error);
+    return null;
+  }
+};
+
 module.exports = {
   createNotification,
   createLikeNotification,
   createCommentNotification,
-  createReplyNotification
+  createReplyNotification,
+  createSuggestionNotification,
+  createComplaintNotification
 };

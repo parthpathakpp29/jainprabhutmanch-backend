@@ -2,6 +2,7 @@ const SuggestionComplaint = require('../../models/SuggestionComplaintModels/Sugg
 const User = require('../../models/UserRegistrationModels/userModel');
 const HierarchicalSangh = require('../../models/SanghModels/hierarchicalSanghModel');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
+const { createSuggestionNotification, createComplaintNotification, createNotification } = require('../../utils/notificationUtils');
 
 // Create Suggestion / Complaint
 exports.createSuggestionComplaint = async (req, res) => {
@@ -48,6 +49,34 @@ exports.createSuggestionComplaint = async (req, res) => {
     });
     
     await newSubmission.save();
+    
+    // Get sender's name for notification
+    const sender = await User.findById(req.user._id, 'firstName lastName');
+    const senderName = sender ? `${sender.firstName} ${sender.lastName}` : 'A user';
+    
+    // Send notification to recipient if it's a user
+    if (recipient.type === 'user') {
+      if (type === 'suggestion') {
+        await createSuggestionNotification({
+          senderId: req.user._id,
+          receiverId: recipient.userId,
+          entityId: newSubmission._id,
+          subject,
+          senderName
+        });
+      } else if (type === 'complaint') {
+        await createComplaintNotification({
+          senderId: req.user._id,
+          receiverId: recipient.userId,
+          entityId: newSubmission._id,
+          subject,
+          senderName
+        });
+      }
+    }
+    
+    // For Sangh recipients, we would need to find admins of that Sangh and notify them
+    // This would require additional logic to determine who should receive the notification
     
     return successResponse(
       res, 
@@ -181,7 +210,8 @@ exports.updateSuggestionComplaint = async (req, res) => {
     const userId = req.user._id;
     const isSuperAdmin = req.user.role === 'superadmin';
     
-    const submission = await SuggestionComplaint.findById(id);
+    const submission = await SuggestionComplaint.findById(id)
+      .populate('submittedBy', 'firstName lastName');
     
     if (!submission) {
       return errorResponse(res, 'Suggestion/complaint not found', 404);
@@ -197,16 +227,41 @@ exports.updateSuggestionComplaint = async (req, res) => {
       return errorResponse(res, 'You do not have permission to update this submission', 403);
     }
     
+    // Store old status for notification
+    const oldStatus = submission.status;
+    
     // Update fields
     if (status) {
       submission.status = status;
     }
     
     if (response) {
-      submission.response = response;
+      submission.responses = submission.responses || [];
+      submission.responses.push({
+        text: response,
+        respondedBy: userId,
+        timestamp: new Date()
+      });
     }
     
     await submission.save();
+    
+    // Send notification to submitter about status change
+    if (status && status !== oldStatus) {
+      // Get responder's name
+      const responder = await User.findById(userId, 'firstName lastName');
+      const responderName = responder ? `${responder.firstName} ${responder.lastName}` : 'A user';
+      
+      // Create notification for status update
+      await createNotification({
+        senderId: userId,
+        receiverId: submission.submittedBy._id,
+        type: submission.type === 'suggestion' ? 'suggestion' : 'complaint',
+        message: `Your ${submission.type} "${submission.subject}" status has been updated to: ${status}`,
+        entityId: submission._id,
+        entityType: 'SuggestionComplaint'
+      });
+    }
     
     return successResponse(res, 'Suggestion/complaint updated successfully', submission);
   } catch (error) {
