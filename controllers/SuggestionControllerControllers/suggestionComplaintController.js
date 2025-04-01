@@ -144,73 +144,58 @@ exports.createSuggestionComplaint = async (req, res) => {
 // Get All Suggestions / Complaints (Admin or recipient view)
 exports.getAllSuggestionsComplaints = async (req, res) => {
   try {
-    const { type, status, startDate, endDate } = req.query;
+    const { type, status, startDate, endDate, view } = req.query;
     const userId = req.user._id;
     const isSuperAdmin = req.user.role === 'superadmin';
-    
-    // Build query based on user role and filters
-    const query = {};
-    
-    // Filter by type if provided
-    if (type) {
-      query.type = type;
-    }
-    
-    // Filter by status if provided
-    if (status) {
-      query.status = status;
-    }
-    
-    // Filter by date range if provided
+
+    let query = {};
+
+    // Optional filters
+    if (type) query.type = type;
+    if (status) query.status = status;
     if (startDate && endDate) {
       query.createdAt = {
         $gte: new Date(startDate),
         $lte: new Date(endDate)
       };
     }
-    
-    // For superadmin, show all or filter by recipient type 'superadmin'
-    if (isSuperAdmin) {
-      if (req.query.view === 'received') {
-        query['recipient.type'] = 'superadmin';
-      }
-      // Otherwise, no additional filter - superadmin sees all
-    } else {
-      // For regular users, either show their submissions or ones directed to them
-      if (req.query.view === 'received') {
-        // First, check if user is a Sangh official (president)
-        const userSanghPositions = await HierarchicalSangh.find({
-          'officeBearers.userId': userId,
-          'officeBearers.role': 'president',
-          'officeBearers.status': 'active'
-        }).select('_id level');
-        
-        if (userSanghPositions && userSanghPositions.length > 0) {
-          // User is a president of one or more Sanghs
-          const sanghIds = userSanghPositions.map(sangh => sangh._id);
-          
+
+    // 🔐 Access control by role and view
+    if (view === 'received') {
+      if (isSuperAdmin) {
+        // ✅ Show all submissions — full access
+        query = {}; // clear all filters to show everything
+      } else {
+        // ✅ If user is a Sangh president
+        const sanghRoles = req.user.sanghRoles || [];
+        const presidentSanghIds = sanghRoles
+          .filter(r => r.role === 'president')
+          .map(r => r.sanghId.toString());
+
+        if (presidentSanghIds.length > 0) {
           query.$or = [
-            // Show submissions where user is the direct recipient
             { 'recipient.type': 'user', 'recipient.userId': userId },
-            // Show submissions directed to Sanghs where user is president
-            { 'recipient.type': 'sangh', 'recipient.sanghId': { $in: sanghIds } }
+            { 'recipient.type': 'sangh', 'recipient.sanghId': { $in: presidentSanghIds } }
           ];
         } else {
-          // User is not a Sangh official, only show direct messages
+          // ✅ Regular user: only see suggestions sent to them
           query['recipient.type'] = 'user';
           query['recipient.userId'] = userId;
         }
-      } else {
-        // Default: show user's own submissions
-        query.submittedBy = userId;
       }
+    } else if (view === 'sent') {
+      // ✅ Show what this user submitted
+      query.submittedBy = userId;
+    } else {
+      // Default behavior (like sent)
+      query.submittedBy = userId;
     }
-    
-    // Execute query with pagination
+
+    // 🔁 Pagination
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
-    
+
     const submissions = await SuggestionComplaint.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -218,9 +203,9 @@ exports.getAllSuggestionsComplaints = async (req, res) => {
       .populate('submittedBy', 'firstName lastName')
       .populate('recipient.sanghId', 'name level')
       .populate('recipient.userId', 'firstName lastName');
-    
+
     const total = await SuggestionComplaint.countDocuments(query);
-    
+
     return successResponse(res, 'Suggestions/complaints retrieved successfully', {
       submissions,
       pagination: {
@@ -234,6 +219,7 @@ exports.getAllSuggestionsComplaints = async (req, res) => {
     return errorResponse(res, 'Internal Server Error', 500);
   }
 };
+
 
 // Get Single Suggestion / Complaint by ID
 exports.getSuggestionComplaintById = async (req, res) => {
@@ -283,11 +269,23 @@ exports.updateSuggestionComplaint = async (req, res) => {
     if (!submission) {
       return errorResponse(res, 'Suggestion/complaint not found', 404);
     }
+
+    // Check if user is president of the sangh the suggestion was sent to
+const isSanghPresidentRecipient =
+submission.recipient.type === 'sangh' &&
+req.user.sanghRoles?.some(role =>
+  role.role === 'president' &&
+  role.sanghId.toString() === submission.recipient.sanghId.toString() &&
+  role.level === submission.recipient.sanghLevel
+);
+
+const isRecipient =
+(submission.recipient.type === 'user' && submission.recipient.userId.toString() === userId.toString()) ||
+(submission.recipient.type === 'superadmin' && isSuperAdmin) ||
+isSanghPresidentRecipient;
+
     
-    // Check if user has permission to update this submission
-    const isRecipient = 
-      (submission.recipient.type === 'user' && submission.recipient.userId.toString() === userId.toString()) ||
-      (submission.recipient.type === 'superadmin' && isSuperAdmin);
+
     // Add sangh permission check here based on your sangh permission system
     
     if (!isRecipient && !isSuperAdmin) {

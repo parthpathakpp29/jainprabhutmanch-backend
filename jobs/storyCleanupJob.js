@@ -38,7 +38,8 @@ const cleanupExpiredStories = async () => {
     // Delete from S3 if there are keys to delete
     if (s3Keys.length > 0) {
       const deleteParams = {
-        Bucket: process.env.AWS_BUCKET_NAME,
+        Bucket: process.env.DO_SPACE_NAME,
+
         Delete: { Objects: s3Keys }
       };
       

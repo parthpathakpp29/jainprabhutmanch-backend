@@ -55,17 +55,17 @@ const statusValidation = [
 // POST: Create a new report
 router.post('/', reportValidation, validateRequest, createReport);
 
-// GET: Get reports submitted by a specific Sangh
-router.get('/submitted/:sanghId', getSubmittedReports);
 
 // GET: Get reports received by a specific Sangh
-router.get('/received/:sanghId', getReceivedReports);
+router.get('/received', getReceivedReports);
+
+// GET: Get reports submitted by a specific Sangh
+router.get('/submitted/', getSubmittedReports);
 
 // GET: Get top performing Sanghs
 router.get('/top-performers', getTopPerformers);
 
-// GET: Get a single report by ID
-router.get('/:id', getReportById);
+
 
 // GET: Get all reports (with filtering)
 router.get('/', getAllReports);
@@ -78,5 +78,9 @@ router.patch('/:id/status', statusValidation, validateRequest, updateReportStatu
 
 // DELETE: Delete a report by ID
 router.delete('/:id', deleteReport);
+// GET: Get a single report by ID
+router.get('/:id', getReportById);
+
+
 
 module.exports = router;

@@ -15,6 +15,15 @@ const allowedTypes = new Set([
   'video/x-msvideo'
 ]);
 
+// ✅ Support for CDN URL rewriting
+const convertToCdnUrl = (url) => {
+  const endpoint = process.env.DO_ENDPOINT;
+  const cdn = process.env.DO_CDN_URL;
+  if (!cdn || !url.startsWith(endpoint)) return url;
+  return url.replace(endpoint, cdn);
+};
+
+
 const fileFilter = (req, file, cb) => {
   if (file.fieldname === 'groupIcon') {
     // Stricter validation for group icons

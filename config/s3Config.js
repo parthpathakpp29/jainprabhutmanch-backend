@@ -1,34 +1,79 @@
+// const { S3Client, DeleteObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
+// const dotenv = require('dotenv');
+
+// dotenv.config();
+
+// // Validate required environment variables
+// const requiredEnvVars = ['AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_BUCKET_NAME'];
+// requiredEnvVars.forEach(envVar => {
+//   if (!process.env[envVar]) {
+//     throw new Error(`Missing required environment variable: ${envVar}`);
+//   }
+// });
+
+// // Create S3 client with retry configuration
+// const s3Client = new S3Client({
+//   region: process.env.AWS_REGION || 'ap-south-1',
+//   credentials: {
+//     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+//     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+//   },
+//   maxAttempts: 3, 
+//   retryMode: 'standard'
+// });
+
+// // Test S3 connection
+// const testS3Connection = async () => {
+//   try {
+//     await s3Client.config.credentials();
+//     console.log('Successfully connected to AWS S3');
+//   } catch (error) {
+//     console.error('Failed to connect to AWS S3:', error);
+//     throw error;
+//   }
+// };
+
+// testS3Connection();
+
+// module.exports = { s3Client, DeleteObjectCommand, PutObjectCommand };
+
 const { S3Client, DeleteObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
 const dotenv = require('dotenv');
-
 dotenv.config();
 
-// Validate required environment variables
-const requiredEnvVars = ['AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_BUCKET_NAME'];
+const requiredEnvVars = [
+  'DO_REGION',
+  'DO_ACCESS_KEY',
+  'DO_SECRET_KEY',
+  'DO_SPACE_NAME',
+  'DO_ENDPOINT'
+];
+
 requiredEnvVars.forEach(envVar => {
   if (!process.env[envVar]) {
     throw new Error(`Missing required environment variable: ${envVar}`);
   }
 });
 
-// Create S3 client with retry configuration
 const s3Client = new S3Client({
-  region: process.env.AWS_REGION || 'ap-south-1',
+  region: process.env.DO_REGION,
+  endpoint: process.env.DO_ENDPOINT,
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    accessKeyId: process.env.DO_ACCESS_KEY,
+    secretAccessKey: process.env.DO_SECRET_KEY,
   },
-  maxAttempts: 3, 
+  forcePathStyle: false,
+  maxAttempts: 3,
   retryMode: 'standard'
 });
 
-// Test S3 connection
+// Optional: Test S3 connection
 const testS3Connection = async () => {
   try {
     await s3Client.config.credentials();
-    console.log('Successfully connected to AWS S3');
+    console.log('✅ Connected to DigitalOcean Spaces (S3 compatible)');
   } catch (error) {
-    console.error('Failed to connect to AWS S3:', error);
+    console.error('❌ Failed to connect to DigitalOcean Spaces:', error);
     throw error;
   }
 };
