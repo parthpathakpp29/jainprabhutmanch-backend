@@ -148,18 +148,22 @@ const upload = multer({
     s3: s3Client,
     bucket: process.env.AWS_BUCKET_NAME,
     contentType: multerS3.AUTO_CONTENT_TYPE,
+    metadata: function (req, file, cb) {
+      cb(null, { fieldName: file.fieldname });
+    },
     key: function (req, file, cb) {
-      // Get folder based on file field name
       const folder = getS3Folder(file.fieldname, req);
-      
-      // Create unique filename with timestamp and random string
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
       const filename = uniqueSuffix + path.extname(file.originalname);
-      
-      // Full S3 key with folder path
-      const fullPath = folder + filename;
-      
-      cb(null, fullPath);
+      cb(null, folder + filename);
+    },
+    cacheControl: function(req, file) {
+      if (file.mimetype.startsWith('image/')) {
+        return 'public, max-age=31536000'; // 1 year for images
+      } else if (file.mimetype.startsWith('video/')) {
+        return 'public, max-age=15552000'; // 6 months for videos
+      }
+      return 'public, max-age=86400'; // 1 day for other files
     }
   }),
   limits: {
@@ -185,54 +189,44 @@ const handleMulterError = (err, req, res, next) => {
 
 // Add this to the multer configuration
 const optimizeImage = async (req, res, next) => {
-  // Skip if no file or not a supported field type
   if (!req.file || !['profilePicture', 'chatImage', 'groupIcon', 'image', 'media', 'presidentPhoto', 'secretaryPhoto', 'treasurerPhoto', 'businessPhotos', 'uploadImage', 'entityPhoto', 'passportPhoto', 'fullPhoto', 'familyPhoto'].includes(req.file.fieldname)) {
     return next();
   }
 
-  // Skip if not an image
   if (!req.file.mimetype.startsWith('image/')) {
     return next();
   }
 
   try {
-    // Skip small files (already optimized)
-    if (req.file.size && req.file.size < 50 * 1024) { // Skip files smaller than 50KB
+    if (req.file.size && req.file.size < 50 * 1024) { 
       return next();
     }
 
     let sharpInstance = sharp(req.file.buffer);
     
-    // Determine appropriate dimensions and format based on field type
     if (['profilePicture', 'groupIcon', 'presidentPhoto', 'secretaryPhoto', 'treasurerPhoto', 'uploadImage', 'passportPhoto'].includes(req.file.fieldname)) {
-      // Profile pictures and avatars (square crop)
       sharpInstance = sharpInstance.resize(500, 500, {
         fit: 'cover',
         position: 'center'
       });
     } else if (['fullPhoto', 'familyPhoto'].includes(req.file.fieldname)) {
-      // Full photos (maintain aspect ratio, max width 1000px)
       sharpInstance = sharpInstance.resize(1000, null, {
         fit: 'inside',
         withoutEnlargement: true
       });
     } else {
-      // General images (maintain aspect ratio, max width 1200px)
       sharpInstance = sharpInstance.resize(1200, null, {
         fit: 'inside',
         withoutEnlargement: true
       });
     }
 
-    // Strip metadata to reduce file size
     sharpInstance = sharpInstance.withMetadata(false);
     
-    // Preserve PNG format for logos and icons (for transparency)
     if (req.file.mimetype === 'image/png' && ['groupIcon', 'businessPhotos'].includes(req.file.fieldname)) {
       sharpInstance = sharpInstance.png({ quality: 85, compressionLevel: 9 });
     } else {
-      // Use JPEG for photos and other images
-      sharpInstance = sharpInstance.jpeg({ quality: 80, progressive: true });
+      sharpInstance = sharpInstance.webp({ quality: 80 });
     }
 
     const optimized = await sharpInstance.toBuffer();
@@ -243,7 +237,6 @@ const optimizeImage = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('Image optimization error:', error);
-    // Continue without optimization rather than failing the upload
     next();
   }
 };
@@ -255,63 +248,50 @@ const optimizeMultipleFiles = async (req, res, next) => {
   }
   
   try {
-    // Process each field
     for (const fieldName in req.files) {
       const files = req.files[fieldName];
       
-      // Process each file in the field
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         
-        // Skip non-image files
         if (!file.mimetype.startsWith('image/')) {
           continue;
         }
         
-        // Skip small files (already optimized)
         if (file.size && file.size < 50 * 1024) {
           continue;
         }
         
         let sharpInstance = sharp(file.buffer);
         
-        // Determine appropriate dimensions based on field type
         if (['profilePhoto', 'presidentPhoto', 'secretaryPhoto', 'treasurerPhoto', 'jainAadharPhoto', 'passportPhoto'].includes(fieldName)) {
-          // Profile pictures (square crop)
           sharpInstance = sharpInstance.resize(500, 500, {
             fit: 'cover',
             position: 'center'
           });
         } else if (['fullPhoto', 'familyPhoto'].includes(fieldName)) {
-          // Full photos (maintain aspect ratio, max width 1000px)
           sharpInstance = sharpInstance.resize(1000, null, {
             fit: 'inside',
             withoutEnlargement: true
           });
         } else if (fieldName.includes('profilePhoto') || fieldName.includes('jainAadharPhoto')) {
-          // Handle array notation fields like members[0].profilePhoto
           sharpInstance = sharpInstance.resize(500, 500, {
             fit: 'cover',
             position: 'center'
           });
         } else {
-          // General images (maintain aspect ratio, max width 1200px)
           sharpInstance = sharpInstance.resize(1200, null, {
             fit: 'inside',
             withoutEnlargement: true
           });
         }
         
-        // Strip metadata
         sharpInstance = sharpInstance.withMetadata(false);
         
-        // Format-specific optimization
         if (file.mimetype === 'image/png' && ['businessLogo', 'entityPhoto'].includes(fieldName)) {
-          // Preserve PNG for logos (transparency)
           sharpInstance = sharpInstance.png({ quality: 85, compressionLevel: 9 });
         } else {
-          // Use JPEG for photos
-          sharpInstance = sharpInstance.jpeg({ quality: 80, progressive: true });
+          sharpInstance = sharpInstance.webp({ quality: 80 });
         }
         
         const optimized = await sharpInstance.toBuffer();
@@ -324,7 +304,6 @@ const optimizeMultipleFiles = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('Multiple file optimization error:', error);
-    // Continue without optimization rather than failing the upload
     next();
   }
 };

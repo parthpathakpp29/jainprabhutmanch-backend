@@ -2,8 +2,8 @@ const PricingConfig = require('../models/PaymentModels/pricingConfigModel');
 
 // Default prices (fallback if no config exists)
 const DEFAULT_PRICES = {
-    vyapar: 999 * 100, // ₹999 in paise
-    biodata: 499 * 100  // ₹499 in paise
+    vyapar: 599 * 100, // ₹999 in paise
+    biodata: 249 * 100  // ₹499 in paise
 };
 
 /**

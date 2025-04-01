@@ -70,6 +70,9 @@ router.use(checkAccess);
 
 router.get('/users', getAllUsers);
 
+// Search users endpoint for suggestion/complaint recipient selection
+router.get('/search', searchUsers);
+
 router.get('/:id', 
     [
         param('id').isMongoId().withMessage('Invalid user ID')
@@ -98,8 +101,5 @@ router.post(
     '/skip-profile-picture',
     skipProfilePicture
 );
-
-// Search users endpoint for suggestion/complaint recipient selection
-router.get('/search', searchUsers);
 
 module.exports = router;

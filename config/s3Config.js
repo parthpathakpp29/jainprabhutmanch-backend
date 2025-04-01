@@ -1,4 +1,4 @@
-const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, DeleteObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
 const dotenv = require('dotenv');
 
 dotenv.config();
@@ -35,4 +35,4 @@ const testS3Connection = async () => {
 
 testS3Connection();
 
-module.exports = { s3Client, DeleteObjectCommand };
+module.exports = { s3Client, DeleteObjectCommand, PutObjectCommand };

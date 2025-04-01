@@ -25,9 +25,20 @@ exports.createSuggestionComplaint = async (req, res) => {
     
     // Verify sangh exists if sending to a sangh
     if (recipient.type === 'sangh') {
-      const sanghExists = await HierarchicalSangh.exists({ _id: recipient.sanghId });
-      if (!sanghExists) {
+      const sangh = await HierarchicalSangh.findById(recipient.sanghId)
+        .populate({
+          path: 'officeBearers',
+          match: { role: 'president', status: 'active' },
+          select: 'userId'
+        });
+      
+      if (!sangh) {
         return errorResponse(res, 'Selected Sangh does not exist', 404);
+      }
+      
+      // Check if the Sangh has an active president
+      if (!sangh.officeBearers || sangh.officeBearers.length === 0) {
+        return errorResponse(res, `The selected ${recipient.sanghLevel} Sangh does not have an active president to receive your ${type}`, 400);
       }
     }
     
@@ -75,8 +86,48 @@ exports.createSuggestionComplaint = async (req, res) => {
       }
     }
     
-    // For Sangh recipients, we would need to find admins of that Sangh and notify them
-    // This would require additional logic to determine who should receive the notification
+    // For Sangh recipients, find the president and send notification
+    if (recipient.type === 'sangh') {
+      try {
+        // Find the Sangh and its president
+        const sangh = await HierarchicalSangh.findById(recipient.sanghId)
+          .populate({
+            path: 'officeBearers',
+            match: { role: 'president', status: 'active' },
+            select: 'userId'
+          });
+        
+        if (sangh && sangh.officeBearers && sangh.officeBearers.length > 0) {
+          const presidentUserId = sangh.officeBearers[0].userId;
+          
+          // Create notification for the president
+          if (type === 'suggestion') {
+            await createSuggestionNotification({
+              senderId: req.user._id,
+              receiverId: presidentUserId,
+              entityId: newSubmission._id,
+              subject,
+              senderName,
+              additionalInfo: `${recipient.sanghLevel} Sangh: ${sangh.name}`
+            });
+          } else if (type === 'complaint') {
+            await createComplaintNotification({
+              senderId: req.user._id,
+              receiverId: presidentUserId,
+              entityId: newSubmission._id,
+              subject,
+              senderName,
+              additionalInfo: `${recipient.sanghLevel} Sangh: ${sangh.name}`
+            });
+          }
+          
+          console.log(`Notification sent to ${recipient.sanghLevel} Sangh president for ${type}`);
+        }
+      } catch (notificationError) {
+        console.error('Error sending notification to Sangh president:', notificationError);
+        // Continue execution - don't fail the submission if notification fails
+      }
+    }
     
     return successResponse(
       res, 
@@ -127,12 +178,28 @@ exports.getAllSuggestionsComplaints = async (req, res) => {
     } else {
       // For regular users, either show their submissions or ones directed to them
       if (req.query.view === 'received') {
-        // Show submissions where user is the recipient
-        query.$or = [
-          { 'recipient.type': 'user', 'recipient.userId': userId },
-          // Also include sangh-level submissions if user is a sangh official
-          // This would need to be expanded based on your sangh permission system
-        ];
+        // First, check if user is a Sangh official (president)
+        const userSanghPositions = await HierarchicalSangh.find({
+          'officeBearers.userId': userId,
+          'officeBearers.role': 'president',
+          'officeBearers.status': 'active'
+        }).select('_id level');
+        
+        if (userSanghPositions && userSanghPositions.length > 0) {
+          // User is a president of one or more Sanghs
+          const sanghIds = userSanghPositions.map(sangh => sangh._id);
+          
+          query.$or = [
+            // Show submissions where user is the direct recipient
+            { 'recipient.type': 'user', 'recipient.userId': userId },
+            // Show submissions directed to Sanghs where user is president
+            { 'recipient.type': 'sangh', 'recipient.sanghId': { $in: sanghIds } }
+          ];
+        } else {
+          // User is not a Sangh official, only show direct messages
+          query['recipient.type'] = 'user';
+          query['recipient.userId'] = userId;
+        }
       } else {
         // Default: show user's own submissions
         query.submittedBy = userId;
