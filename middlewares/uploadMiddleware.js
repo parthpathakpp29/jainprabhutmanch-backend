@@ -15,6 +15,16 @@ const allowedTypes = new Set([
   'video/x-msvideo'
 ]);
 
+// Enhanced error logging
+// const logUploadError = (error, fieldname) => {
+//   console.error(`Upload error for ${fieldname}:`, {
+//     message: error.message,
+//     code: error.code,
+//     stack: error.stack,
+//     time: new Date().toISOString()
+//   });
+// };
+
 // ✅ Support for CDN URL rewriting
 const convertToCdnUrl = (url) => {
   const endpoint = process.env.DO_ENDPOINT;
@@ -23,33 +33,50 @@ const convertToCdnUrl = (url) => {
   return url.replace(endpoint, cdn);
 };
 
-
 const fileFilter = (req, file, cb) => {
-  if (file.fieldname === 'groupIcon') {
-    // Stricter validation for group icons
-    if (['image/jpeg', 'image/png'].includes(file.mimetype)) {
+  try {
+    if (file.fieldname === 'profilePicture') {
+      if (['image/jpeg', 'image/png', 'image/jpg'].includes(file.mimetype)) {
+        console.log('Profile picture validation passed:', file.mimetype);
+        cb(null, true);
+      } else {
+        const error = new Error('Only JPEG, JPG and PNG files are allowed for profile pictures');
+        logUploadError(error, file.fieldname);
+        cb(error);
+      }
+      return;
+    }
+    
+    if (file.fieldname === 'groupIcon') {
+      // Stricter validation for group icons
+      if (['image/jpeg', 'image/png'].includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only JPEG and PNG files are allowed for group icons'));
+      }
+      return;
+    }
+    
+    if (file.fieldname === 'uploadImage') {
+      // Validation for Sadhu profile images
+      if (['image/jpeg', 'image/png'].includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only JPEG and PNG files are allowed for Sadhu profile images'));
+      }
+      return;
+    }
+    
+    if (allowedTypes.has(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only JPEG and PNG files are allowed for group icons'));
+      const error = new Error(`Unsupported file type: ${file.mimetype}`);
+      logUploadError(error, file.fieldname);
+      cb(error);
     }
-    return;
-  }
-  
-  if (file.fieldname === 'uploadImage') {
-    // Validation for Sadhu profile images
-    if (['image/jpeg', 'image/png'].includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only JPEG and PNG files are allowed for Sadhu profile images'));
-    }
-    return;
-  }
-  
-  // Other file types...
-  if (allowedTypes.has(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error(`Unsupported file type: ${file.mimetype}`));
+  } catch (error) {
+    logUploadError(error, file.fieldname);
+    cb(error);
   }
 };
 
@@ -161,38 +188,56 @@ const upload = multer({
       cb(null, { fieldName: file.fieldname });
     },
     key: function (req, file, cb) {
-      const folder = getS3Folder(file.fieldname, req);
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-      const filename = uniqueSuffix + path.extname(file.originalname);
-      cb(null, folder + filename);
-    },
-    cacheControl: function(req, file) {
-      if (file.mimetype.startsWith('image/')) {
-        return 'public, max-age=31536000'; // 1 year for images
-      } else if (file.mimetype.startsWith('video/')) {
-        return 'public, max-age=15552000'; // 6 months for videos
+      try {
+        const folder = getS3Folder(file.fieldname, req);
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const filename = uniqueSuffix + path.extname(file.originalname);
+        console.log('Generating S3 key:', folder + filename);
+        cb(null, folder + filename);
+      } catch (error) {
+        logUploadError(error, file.fieldname);
+        cb(error);
       }
-      return 'public, max-age=86400'; // 1 day for other files
-    }
+    },
+    cacheControl: 'public, max-age=31536000' // 1 year cache
   }),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB file size limit
-    files: 10 // Maximum 10 files per upload
+    fileSize: 10 * 1024 * 1024, // 10MB
+    files: 10
   },
   fileFilter: fileFilter
 });
 
-// Error handling middleware
+// Enhanced error handling middleware
 const handleMulterError = (err, req, res, next) => {
+  logUploadError(err, req.file?.fieldname || 'unknown');
+  
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File too large. Maximum size is 10MB.' });
+      return res.status(400).json({ 
+        error: 'File too large. Maximum size is 10MB.',
+        details: err.message
+      });
     }
     if (err.code === 'LIMIT_FILE_COUNT') {
-      return res.status(400).json({ error: 'Too many files. Maximum is 10 files.' });
+      return res.status(400).json({ 
+        error: 'Too many files. Maximum is 10 files.',
+        details: err.message
+      });
     }
-    return res.status(400).json({ error: `Upload error: ${err.message}` });
+    return res.status(400).json({ 
+      error: 'Upload error',
+      details: err.message
+    });
   }
+  
+  if (err) {
+    return res.status(500).json({ 
+      error: 'Server error during upload',
+      details: err.message
+    });
+  }
+  
   next();
 };
 

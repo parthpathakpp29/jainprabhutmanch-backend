@@ -932,8 +932,8 @@ const createSpecializedSangh = asyncHandler(async (req, res) => {
             name,
             level: level, // Same level as parent Sangh
             location: req.body.location, // Same location as parent Sangh
-            parentSangh: parentSangh._id, // Same parent as parent Sangh
-            parentMainSangh: parentMainSanghId, // Link to the main Sangh
+            parentSangh: level === 'country' ? null : parentSangh._id, // Country level Sanghs don't have parent
+            parentMainSangh: level === 'country' ? null : parentMainSanghId, // Country level Sanghs don't have parent
             sanghType: sanghType,
             officeBearers: formattedOfficeBearers,
             description,

@@ -52,9 +52,8 @@ router.get('/:userId',
     getStoriesByUser
 );
 
-router.delete('/delete/:userId/:storyId', 
+router.delete('/:storyId', 
     [
-        param('userId').isMongoId().withMessage('Invalid user ID'),
         param('storyId').isMongoId().withMessage('Invalid story ID')
     ],
     validateRequest,

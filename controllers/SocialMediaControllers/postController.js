@@ -19,7 +19,7 @@ const SadhuPost = require('../../models/SadhuModels/sadhuPostModel');
 
 // Create a post
 const createPost = [
-  // Removing upload.postMediaUpload as it's already in the route
+  
   ...postValidation.create,
   asyncHandler(async (req, res) => {
     const errors = validationResult(req);
@@ -27,7 +27,8 @@ const createPost = [
       return errorResponse(res, 'Validation failed', 400, errors.array());
     }
 
-    const { caption, userId } = req.body;
+    const { caption } = req.body;
+    const userId = req.user._id;
     const user = await User.findById(userId);
     if (!user) {
       return errorResponse(res, 'User not found', 404);
@@ -122,15 +123,9 @@ const getAllPosts = asyncHandler(async (req, res) => {
 
 // Toggle like on a post
 const toggleLike = [
-  ...postValidation.toggleLike,
   asyncHandler(async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return errorResponse(res, 'Validation failed', 400, errors.array());
-    }
-
     const { postId } = req.params;
-    const { userId } = req.query;
+    const userId = req.user._id; // Get user ID from auth token
 
     const post = await Post.findById(postId);
     if (!post) {
@@ -139,24 +134,27 @@ const toggleLike = [
 
     const isLiked = post.likes.includes(userId);
     if (isLiked) {
-      post.likes = post.likes.filter((id) => id.toString() !== userId);
+      post.likes = post.likes.filter((id) => id.toString() !== userId.toString());
     } else {
       post.likes.push(userId);
 
-      // Create notification using the utility function
-      if (post.user.toString() !== userId) {
+      // Create notification if the post was liked (not unliked)
+      if (post.user.toString() !== userId.toString()) {
         await createLikeNotification({
           senderId: userId,
           receiverId: post.user,
           entityId: postId,
-          entityType: 'post',
-          senderName: req.user ? `${req.user.firstName} ${req.user.lastName}` : 'Someone'
+          entityType: 'Post',
+          senderName: `${req.user.firstName} ${req.user.lastName}`
         });
       }
     }
 
     await post.save();
-    return successResponse(res, { likesCount: post.likes.length, likes: post.likes }, isLiked ? 'Like removed' : 'Post liked', 200);
+    return successResponse(res, 
+      { likesCount: post.likes.length, likes: post.likes }, 
+      isLiked ? 'Like removed' : 'Post liked'
+    );
   })
 ];
 
@@ -170,7 +168,7 @@ const deletePost = [
     }
 
     const { postId } = req.params;
-    const { userId } = req.body;
+    const userId = req.user._id;
 
     const post = await Post.findById(postId);
     if (!post) {
@@ -206,7 +204,6 @@ const deletePost = [
         }
       });
       
-      // Wait for all S3 delete operations to complete
       await Promise.all(deletePromises);
     }
 
@@ -228,8 +225,9 @@ const editPost = [
       return errorResponse(res, 'Validation failed', 400, errors.array());
     }
 
-    const { userId, caption } = req.body;
+    const { caption } = req.body;
     const { postId } = req.params;
+    const userId = req.user._id;
 
     const post = await Post.findById(postId);
     if (!post) {
@@ -242,9 +240,7 @@ const editPost = [
 
     post.caption = caption;
     
-    // If replaceMedia flag is set, delete existing media from S3 and replace with new ones
     if (req.body.replaceMedia === 'true' && post.media && post.media.length > 0) {
-      // Delete existing media from S3
       const deletePromises = post.media.map(async (mediaItem) => {
         try {
           const key = extractS3KeyFromUrl(mediaItem.url);
@@ -262,10 +258,7 @@ const editPost = [
         }
       });
       
-      // Wait for all S3 delete operations to complete
       await Promise.all(deletePromises);
-      
-      // Clear existing media array
       post.media = [];
     }
     
@@ -302,7 +295,9 @@ const addComment = [
       return errorResponse(res, 'Validation failed', 400, errors.array());
     }
 
-    const { postId, commentText, userId } = req.body;
+    const { postId, commentText } = req.body;
+    const userId = req.user._id;
+    
     const post = await Post.findById(postId);
     if (!post) {
       return errorResponse(res, 'Post not found', 404);
@@ -318,13 +313,13 @@ const addComment = [
     await post.populate('comments.user', 'firstName lastName profilePicture');
 
     // Create notification for the post owner if the commenter is not the owner
-    if (post.user.toString() !== userId) {
+    if (post.user.toString() !== userId.toString()) {
       await createCommentNotification({
         senderId: userId,
         receiverId: post.user,
         entityId: postId,
-        entityType: 'post',
-        senderName: req.user ? `${req.user.firstName} ${req.user.lastName}` : 'Someone'
+        entityType: 'Post',
+        senderName: `${req.user.firstName} ${req.user.lastName}`
       });
     }
 
@@ -341,7 +336,9 @@ const addReply = [
       return errorResponse(res, 'Validation failed', 400, errors.array());
     }
 
-    const { commentId, userId, replyText } = req.body;
+    const { commentId, replyText } = req.body;
+    const userId = req.user._id;
+    
     const post = await Post.findOne({ 'comments._id': commentId });
     if (!post) {
       return errorResponse(res, 'Post or comment not found', 404);
@@ -363,14 +360,14 @@ const addReply = [
     await post.populate('comments.replies.user', 'firstName lastName profilePicture');
 
     // Create notification for the comment owner if the replier is not the owner
-    if (comment.user.toString() !== userId) {
+    if (comment.user.toString() !== userId.toString()) {
       await createReplyNotification({
         senderId: userId,
         receiverId: comment.user,
         entityId: commentId,
-        postId: postId,
-        entityType: 'post',
-        senderName: req.user ? `${req.user.firstName} ${req.user.lastName}` : 'Someone'
+        postId: post._id,
+        entityType: 'Post',
+        senderName: `${req.user.firstName} ${req.user.lastName}`
       });
     }
 
@@ -406,24 +403,22 @@ const getReplies = [
 // Delete a specific media item from a post
 const deleteMediaItem = asyncHandler(async (req, res) => {
   const { postId, mediaId } = req.params;
-  const { userId } = req.body;
+  const userId = req.user._id;
 
   const post = await Post.findById(postId);
   if (!post) {
     return errorResponse(res, 'Post not found', 404);
   }
 
-  if (post.user.toString() !== userId) {
+  if (post.user.toString() !== userId.toString()) {
     return errorResponse(res, 'Unauthorized to modify this post', 403);
   }
 
-  // Find the media item in the post
   const mediaItem = post.media.id(mediaId);
   if (!mediaItem) {
     return errorResponse(res, 'Media item not found', 404);
   }
 
-  // Delete from S3
   try {
     const key = extractS3KeyFromUrl(mediaItem.url);
     if (key) {
@@ -440,24 +435,23 @@ const deleteMediaItem = asyncHandler(async (req, res) => {
     return errorResponse(res, 'Error deleting media from storage', 500);
   }
 
-  // Remove the media item from the post
   post.media.pull(mediaId);
   await post.save();
 
   return successResponse(res, post, 'Media item deleted successfully');
 });
 
-// Hide a post (make it invisible to others)
+// Hide a post
 const hidePost = asyncHandler(async (req, res) => {
   const { postId } = req.params;
-  const { userId } = req.body;
+  const userId = req.user._id;
 
   const post = await Post.findById(postId);
   if (!post) {
     return errorResponse(res, 'Post not found', 404);
   }
 
-  if (post.user.toString() !== userId) {
+  if (post.user.toString() !== userId.toString()) {
     return errorResponse(res, 'Unauthorized to modify this post', 403);
   }
 
@@ -467,17 +461,17 @@ const hidePost = asyncHandler(async (req, res) => {
   return successResponse(res, post, 'Post hidden successfully');
 });
 
-// Unhide a post (make it visible again)
+// Unhide a post
 const unhidePost = asyncHandler(async (req, res) => {
   const { postId } = req.params;
-  const { userId } = req.body;
+  const userId = req.user._id;
 
   const post = await Post.findById(postId);
   if (!post) {
     return errorResponse(res, 'Post not found', 404);
   }
 
-  if (post.user.toString() !== userId) {
+  if (post.user.toString() !== userId.toString()) {
     return errorResponse(res, 'Unauthorized to modify this post', 403);
   }
 

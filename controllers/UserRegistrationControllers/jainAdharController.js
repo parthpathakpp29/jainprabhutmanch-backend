@@ -26,6 +26,22 @@ const createJainAadhar = asyncHandler(async (req, res) => {
             return errorResponse(res, 'State is required in location data', 400);
         }
 
+        // Handle file uploads
+        if (!req.files) {
+            return errorResponse(res, 'Required documents are missing', 400);
+        }
+
+        const { panCard, aadharCard, userProfile } = req.files;
+        
+        if (!panCard || !panCard[0] || !aadharCard || !aadharCard[0] || !userProfile || !userProfile[0]) {
+            return errorResponse(res, 'All required documents (PAN Card, Aadhar Card, and Profile Photo) must be uploaded', 400);
+        }
+
+        // Get file URLs
+        const panCardUrl = panCard[0].location;
+        const aadharCardUrl = aadharCard[0].location;
+        const userProfileUrl = userProfile[0].location;
+
         // Determine application level based on location
         // Check for area first - if area is provided, route to area level
         if (location.area && location.city && location.district) {
@@ -231,12 +247,16 @@ const createJainAadhar = asyncHandler(async (req, res) => {
         }
 
         // Create application
-      const jainAadharData = {
-        ...req.body,
-        userId: req.user._id,
+        const jainAadharData = {
+            ...req.body,
+            userId: req.user._id,
             applicationLevel,
             reviewingSanghId,
             status: 'pending',
+            // Add the file URLs
+            PanCard: panCardUrl,
+            AadharCard: aadharCardUrl,
+            userProfile: userProfileUrl,
             location: {
                 country: 'India',
                 state: location.state,
@@ -251,15 +271,15 @@ const createJainAadhar = asyncHandler(async (req, res) => {
                 remarks: 'Application submitted',
                 timestamp: new Date()
             }]
-      };
+        };
 
-      const newJainAadhar = await JainAadhar.create(jainAadharData);
+        const newJainAadhar = await JainAadhar.create(jainAadharData);
 
         // Update user's status
-      await User.findByIdAndUpdate(req.user._id, {
-        jainAadharStatus: 'pending',
-        jainAadharApplication: newJainAadhar._id
-      });
+        await User.findByIdAndUpdate(req.user._id, {
+            jainAadharStatus: 'pending',
+            jainAadharApplication: newJainAadhar._id
+        });
 
         return successResponse(res, newJainAadhar, 'Application submitted successfully', 201);
     } catch (error) {

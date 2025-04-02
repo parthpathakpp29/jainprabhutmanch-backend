@@ -43,8 +43,7 @@ router.post('/create',
   postCreationLimiter, 
   upload.postMediaUpload,  
   [
-    check('caption').optional().isLength({ max: 2000 }).withMessage('Caption cannot exceed 2000 characters'),
-    check('userId').notEmpty().withMessage('User ID is required')
+    check('caption').optional().isLength({ max: 2000 }).withMessage('Caption cannot exceed 2000 characters')
   ], 
   createPost
 );
@@ -73,8 +72,7 @@ router.delete('/:postId', [
 // Delete a specific media item from a post
 router.delete('/:postId/media/:mediaId', [
   param('postId').isMongoId().withMessage('Invalid post ID'),
-  param('mediaId').isMongoId().withMessage('Invalid media ID'),
-  check('userId').notEmpty().isMongoId().withMessage('User ID is required')
+  param('mediaId').isMongoId().withMessage('Invalid media ID')
 ], deleteMediaItem);
 
 // User-specific post routes
@@ -89,14 +87,12 @@ router.put('/:postId/like', [
 
 router.post('/comment', [
   check('postId').isMongoId().withMessage('Invalid post ID'),
-  check('commentText').notEmpty().withMessage('Comment text is required').isLength({ max: 500 }).withMessage('Comment cannot exceed 500 characters'),
-  check('userId').notEmpty().isMongoId().withMessage('User ID is required')
+  check('commentText').notEmpty().withMessage('Comment text is required').isLength({ max: 500 }).withMessage('Comment cannot exceed 500 characters')
 ], addComment);
 
 router.post('/comment/reply', [
   check('commentId').isMongoId().withMessage('Invalid comment ID'),
-  check('replyText').notEmpty().withMessage('Reply text is required').isLength({ max: 500 }).withMessage('Reply cannot exceed 500 characters'),
-  check('userId').notEmpty().isMongoId().withMessage('User ID is required')
+  check('replyText').notEmpty().withMessage('Reply text is required').isLength({ max: 500 }).withMessage('Reply cannot exceed 500 characters')
 ], addReply);
 
 router.get('/comments/:commentId/replies', [
@@ -104,14 +100,12 @@ router.get('/comments/:commentId/replies', [
 ], getReplies);
 
 // Visibility routes
-// router.put('/:postId/hide', [
-//   param('postId').isMongoId().withMessage('Invalid post ID'),
-//   check('userId').notEmpty().isMongoId().withMessage('User ID is required')
-// ], hidePost);
+router.put('/:postId/hide', [
+  param('postId').isMongoId().withMessage('Invalid post ID')
+], hidePost);
 
-// router.put('/:postId/unhide', [
-//   param('postId').isMongoId().withMessage('Invalid post ID'),
-//   check('userId').notEmpty().isMongoId().withMessage('User ID is required')
-// ], unhidePost);
+router.put('/:postId/unhide', [
+  param('postId').isMongoId().withMessage('Invalid post ID')
+], unhidePost);
 
 module.exports = router;

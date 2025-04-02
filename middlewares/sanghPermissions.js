@@ -169,7 +169,7 @@ const canReviewJainAadharByLocation = asyncHandler(async (req, res, next) => {
                     if (sangh.location.state === state) {
                         hasAuthority = true;
                     }
-                    break;
+                        break;
                 case 'district':
                     if (sangh.location.state === state && 
                         sangh.location.district === district) {
@@ -417,9 +417,6 @@ const canManageSpecializedSangh = asyncHandler(async (req, res, next) => {
     try {
         const sanghId = req.params.sanghId || req.params.id;
         const userId = req.user._id;
-        
-        console.log('Specialized Sangh middleware - sanghId:', sanghId);
-        console.log('Specialized Sangh middleware - userId:', userId);
 
         // If user is superadmin, grant full access
         if (req.user.role === 'superadmin' || req.user.role === 'admin') {
@@ -488,18 +485,18 @@ const canCreateSpecializedSangh = asyncHandler(async (req, res, next) => {
     try {
         const userId = req.user._id;
         const { sanghType, level } = req.body;
-        
-        // If user is superadmin, grant full access
+
+        // 1. Allow superadmin or admin full access
         if (req.user.role === 'superadmin' || req.user.role === 'admin') {
             return next();
         }
 
-        // Validate sanghType
+        // 2. Validate sanghType
         if (!['women', 'youth'].includes(sanghType)) {
             return errorResponse(res, 'Invalid Sangh type. Must be "women" or "youth"', 400);
         }
 
-        // First, check if user is a president of a specialized Sangh of the same type
+        // 3. First check if user is president of an active specialized Sangh of this type
         const specializedSangh = await HierarchicalSangh.findOne({
             'officeBearers': {
                 $elemMatch: {
@@ -511,19 +508,17 @@ const canCreateSpecializedSangh = asyncHandler(async (req, res, next) => {
             'status': 'active',
             'sanghType': sanghType
         });
-        
+
         if (specializedSangh) {
-            // Check if the specialized Sangh president has access to create the target level
             if (!hasLevelAccess(specializedSangh.level, level)) {
                 return errorResponse(res, `As a ${specializedSangh.level} level president, you cannot create a ${level} level Sangh`, 403);
             }
-            
-            // Store the specialized Sangh in the request for later use
+
             req.parentSangh = specializedSangh;
             return next();
         }
 
-        // If not a specialized Sangh president, check if user is a main Sangh president
+        // 4. Else, check if user is a president of a main sangh
         const mainSangh = await HierarchicalSangh.findOne({
             'officeBearers': {
                 $elemMatch: {
@@ -535,21 +530,53 @@ const canCreateSpecializedSangh = asyncHandler(async (req, res, next) => {
             'status': 'active',
             'sanghType': 'main'
         });
-        
+
         if (!mainSangh) {
             return errorResponse(res, 'You must be either a main Sangh president or a specialized Sangh president of the same type', 403);
         }
-        
-        // Check if the main Sangh president has access to create the target level
-        if (!hasLevelAccess(mainSangh.level, level)) {
+
+        // 5. Special case: Allow country-level presidents to create country-level specialized Sanghs
+        if (mainSangh.level === 'country' && level === 'country') {
+            // This is allowed - country president can create country-level specialized Sangh
+        } 
+        // For main Sangh presidents, allow creating specialized Sanghs at any level below their own
+        else if (mainSangh.sanghType === 'main') {
+            // Allow if target level is below or equal to the president's level
+            const levelHierarchy = ['country', 'state', 'district', 'city', 'area'];
+            const presidentLevelIndex = levelHierarchy.indexOf(mainSangh.level);
+            const targetLevelIndex = levelHierarchy.indexOf(level);
+            
+            if (targetLevelIndex > presidentLevelIndex) {
+                return errorResponse(res, `As a ${mainSangh.level} level president, you cannot create a higher level ${level} Sangh`, 403);
+              }
+              
+        }
+        // For specialized Sangh presidents, use the normal hierarchy access rules
+        else if (!hasLevelAccess(mainSangh.level, level)) {
             return errorResponse(res, `As a ${mainSangh.level} level president, you cannot create a ${level} level Sangh`, 403);
         }
-        
-        // Store the main Sangh in the request for later use
+
+        // Important: prevent same-level specialized sangh conflict (duplicate)
+        const existingSameLevelSpecialized = await HierarchicalSangh.findOne({
+            sanghType,
+            level,
+            'status': 'active',
+            'location.country': mainSangh.location?.country,
+            'location.state': mainSangh.location?.state,
+            'location.district': mainSangh.location?.district,
+            'location.city': mainSangh.location?.city
+        });
+
+        if (existingSameLevelSpecialized) {
+            return errorResponse(res, `A ${sanghType} Sangh already exists at this ${level} level`, 409);
+        }
+
         req.parentSangh = mainSangh;
-        next();
+        return next();
+
     } catch (error) {
-        return errorResponse(res, error.message, 500);
+        console.error('Error in canCreateSpecializedSangh middleware:', error);
+        return errorResponse(res, error.message || 'Internal Server Error', 500);
     }
 });
 

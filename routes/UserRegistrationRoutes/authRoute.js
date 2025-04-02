@@ -38,7 +38,7 @@ const registerLimiter = rateLimit({
 
 // Public routes
 router.post('/register', 
-    registerLimiter,
+    // registerLimiter,
     [
         body('firstName').trim().isLength({ min: 2, max: 30 }).withMessage('First name must be between 2 and 30 characters'),
         body('lastName').trim().isLength({ min: 2, max: 30 }).withMessage('Last name must be between 2 and 30 characters'),

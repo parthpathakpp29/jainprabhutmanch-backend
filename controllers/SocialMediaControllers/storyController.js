@@ -9,7 +9,7 @@ const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const createStory = asyncHandler(async (req, res) => {
     try {
         const { type } = req.body;
-        const userId = req.user._id; // Get userId from authenticated user
+        const userId = req.user._id;
 
         // Get S3 URLs from uploaded files
         const mediaFiles = req.files ? req.files.map(file => file.location) : [];
@@ -100,7 +100,7 @@ const getStoriesByUser = asyncHandler(async (req, res) => {
 const deleteStory = asyncHandler(async (req, res) => {
     try {
         const { storyId } = req.params;
-        const userId = req.user._id; // Get userId from authenticated user
+        const userId = req.user._id;
 
         // Find the story
         const story = await Story.findOne({

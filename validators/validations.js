@@ -44,41 +44,35 @@ const userValidation = {
 // Post Validation
 const postValidation = {
   create: [
-    body('caption').optional().isString().isLength({ max: 500 }).withMessage('Caption must be a string with a maximum length of 500 characters'),
-    body('userId').notEmpty().isMongoId().withMessage('User ID is required and must be a valid Mongo ID'),
+    body('caption').optional().isString().isLength({ max: 500 }).withMessage('Caption must be a string with a maximum length of 500 characters')
   ],
   edit: [
     param('postId').notEmpty().isMongoId().withMessage('Post ID is required and must be a valid Mongo ID'),
-    body('caption').optional().isString().isLength({ max: 500 }).withMessage('Caption must be a string with a maximum length of 500 characters'),
-    body('userId').notEmpty().isMongoId().withMessage('User ID is required and must be a valid Mongo ID'),
+    body('caption').optional().isString().isLength({ max: 500 }).withMessage('Caption must be a string with a maximum length of 500 characters')
   ],
   comment: [
     body('postId').notEmpty().isMongoId().withMessage('Post ID is required and must be a valid Mongo ID'),
-    body('commentText').notEmpty().isString().withMessage('Comment text is required and must be a string'),
-    body('userId').notEmpty().isMongoId().withMessage('User ID is required and must be a valid Mongo ID'),
+    body('commentText').notEmpty().isString().withMessage('Comment text is required and must be a string')
   ],
   reply: [
     body('commentId').notEmpty().isMongoId().withMessage('Comment ID is required and must be a valid Mongo ID'),
-    body('userId').notEmpty().isMongoId().withMessage('User ID is required and must be a valid Mongo ID'),
-    body('replyText').notEmpty().isString().withMessage('Reply text is required and must be a string'),
+    body('replyText').notEmpty().isString().withMessage('Reply text is required and must be a string')
   ],
   toggleLike: [
-    param('postId').notEmpty().isMongoId().withMessage('Post ID is required and must be a valid Mongo ID'),
-    query('userId').notEmpty().isMongoId().withMessage('User ID is required and must be a valid Mongo ID'),
+    param('postId').notEmpty().isMongoId().withMessage('Post ID is required and must be a valid Mongo ID')
   ],
   delete: [
-    param('postId').notEmpty().isMongoId().withMessage('Post ID is required and must be a valid Mongo ID'),
-    body('userId').notEmpty().isMongoId().withMessage('User ID is required and must be a valid Mongo ID'),
+    param('postId').notEmpty().isMongoId().withMessage('Post ID is required and must be a valid Mongo ID')
   ],
   getPostsByUser: [
-    param('userId').notEmpty().isMongoId().withMessage('User ID is required and must be a valid Mongo ID'),
+    param('userId').notEmpty().isMongoId().withMessage('User ID is required and must be a valid Mongo ID')
   ],
   getPostById: [
-    param('postId').notEmpty().isMongoId().withMessage('Post ID is required and must be a valid Mongo ID'),
+    param('postId').notEmpty().isMongoId().withMessage('Post ID is required and must be a valid Mongo ID')
   ],
   getReplies: [
-    param('commentId').notEmpty().isMongoId().withMessage('Comment ID is required and must be a valid Mongo ID'),
-  ],
+    param('commentId').notEmpty().isMongoId().withMessage('Comment ID is required and must be a valid Mongo ID')
+  ]
 };
 
 module.exports = {
