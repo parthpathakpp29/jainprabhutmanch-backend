@@ -27,25 +27,30 @@ const reportValidation = [
   check('treasurerName').notEmpty().withMessage('Treasurer name is required'),
   check('reportMonth').isInt({ min: 1, max: 12 }).withMessage('Valid report month is required'),
   check('reportYear').isInt({ min: 2000 }).withMessage('Valid report year is required'),
-  check('generalMeetingCount').isInt({ min: 0 }).withMessage('General meeting count must be a positive number'),
-  check('boardMeetingCount').isInt({ min: 0 }).withMessage('Board meeting count must be a positive number'),
-  check('membership').notEmpty().withMessage('Membership information is required'),
+  check('membershipCount').isInt({ min: 0 }).withMessage('Membership count must be a positive number'),
   check('jainAadharCount').isInt({ min: 0 }).withMessage('Jain Aadhar count must be a positive number'),
-  check('projects').notEmpty().withMessage('Projects information is required'),
-  check('events').notEmpty().withMessage('Events information is required'),
   check('submittingSanghId').notEmpty().withMessage('Submitting Sangh ID is required'),
-  // Optional validation for visits received
-  check('visitsReceived.count').optional().isInt({ min: 0 }).withMessage('Visits received count must be a positive number'),
-  check('visitsReceived.details.*.visitDate').optional().isISO8601().withMessage('Visit date must be a valid date'),
-  check('visitsReceived.details.*.visitorSanghLevel').optional().isIn(['national', 'state', 'district', 'city', 'area']).withMessage('Invalid visitor Sangh level'),
-  check('visitsReceived.details.*.visitorName').optional().notEmpty().withMessage('Visitor name is required'),
-  check('visitsReceived.details.*.visitorRole').optional().isIn(['president', 'secretary', 'treasurer', 'other']).withMessage('Invalid visitor role'),
-  check('visitsReceived.details.*.purpose').optional().notEmpty().withMessage('Visit purpose is required'),
-  // Optional validation for visits conducted
-  check('visitsConducted.count').optional().isInt({ min: 0 }).withMessage('Visits conducted count must be a positive number'),
-  check('visitsConducted.sanghs.*.sanghLevel').optional().isIn(['national', 'state', 'district', 'city', 'area']).withMessage('Invalid Sangh level'),
-  check('visitsConducted.sanghs.*.visitDate').optional().isISO8601().withMessage('Visit date must be a valid date'),
-  check('visitsConducted.sanghs.*.purpose').optional().notEmpty().withMessage('Visit purpose is required')
+  
+  // Validate general meetings
+  check('generalMeetings.details.*.meetingNumber').optional().isInt({ min: 1 }).withMessage('General meeting number must be a positive number'),
+  check('generalMeetings.details.*.date').optional().isISO8601().withMessage('General meeting date must be a valid date'),
+  check('generalMeetings.details.*.attendanceCount').optional().isInt({ min: 0 }).withMessage('General meeting attendance count must be a positive number'),
+  
+  // Validate board meetings
+  check('boardMeetings.details.*.meetingNumber').optional().isInt({ min: 1 }).withMessage('Board meeting number must be a positive number'),
+  check('boardMeetings.details.*.date').optional().isISO8601().withMessage('Board meeting date must be a valid date'),
+  check('boardMeetings.details.*.attendanceCount').optional().isInt({ min: 0 }).withMessage('Board meeting attendance count must be a positive number'),
+  
+  // Validate projects/events
+  check('projects.*.eventName').optional().notEmpty().withMessage('Event name is required'),
+  check('projects.*.memberCount').optional().isInt({ min: 0 }).withMessage('Event member count must be a positive number'),
+  check('projects.*.eventDate').optional().isISO8601().withMessage('Event date must be a valid date'),
+  
+  // Validate visits (super simplified)
+  check('visits.*.date').optional().isISO8601().withMessage('Visit date must be a valid date'),
+  check('visits.*.visitorName').optional().notEmpty().withMessage('Visitor name is required'),
+  check('visits.*.visitorLevel').optional().isIn(['national', 'state', 'district', 'city', 'area']).withMessage('Invalid visitor level'),
+  check('visits.*.purpose').optional().notEmpty().withMessage('Visit purpose is required')
 ];
 
 const statusValidation = [

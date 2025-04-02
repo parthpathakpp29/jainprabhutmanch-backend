@@ -1,35 +1,58 @@
 const mongoose = require('mongoose');
 
-// Define a schema for visit details
-const visitDetailSchema = new mongoose.Schema({
-  visitDate: {
+// Define a schema for visit details - Simplified
+const visitSchema = new mongoose.Schema({
+  date: {
     type: Date,
-    required: true
-  },
-  visitorSanghId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'HierarchicalSangh'
-  },
-  visitorSanghLevel: {
-    type: String,
-    enum: ['national', 'state', 'district', 'city', 'area'],
     required: true
   },
   visitorName: {
     type: String,
     required: true
   },
-  visitorRole: {
+  visitorLevel: {
     type: String,
-    enum: ['president', 'secretary', 'treasurer', 'other'],
+    enum: ['national', 'state', 'district', 'city', 'area'],
     required: true
   },
   purpose: {
     type: String,
     required: true
+  }
+}, { _id: true });
+
+// Define a schema for meeting details
+const meetingSchema = new mongoose.Schema({
+  meetingNumber: {
+    type: Number,
+    required: true,
+    min: 1
   },
-  outcome: {
-    type: String
+  date: {
+    type: Date,
+    required: true
+  },
+  attendanceCount: {
+    type: Number,
+    required: true,
+    min: 0
+  }
+}, { _id: true });
+
+// Define a schema for project/event details
+const projectSchema = new mongoose.Schema({
+  eventName: {
+    type: String,
+    required: true
+  },
+  memberCount: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  eventDate: {
+    type: Date,
+    required: true
   }
 }, { _id: true });
 
@@ -75,71 +98,37 @@ const reportingSchema = new mongoose.Schema(
       required: true 
     },
     // Meeting Information
-    generalMeetingCount: { 
-      type: Number, 
-      required: true,
-      default: 0
-    },
-    boardMeetingCount: { 
-      type: Number, 
-      required: true,
-      default: 0
-    },
-    // Official Visits Information
-    visitsReceived: {
+    generalMeetings: {
       count: {
         type: Number,
+        required: true,
         default: 0
       },
-      details: [visitDetailSchema]
+      details: [meetingSchema]
     },
-    visitsConducted: {
+    boardMeetings: {
       count: {
         type: Number,
+        required: true,
         default: 0
       },
-      sanghs: [{
-        sanghId: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'HierarchicalSangh'
-        },
-        sanghName: {
-          type: String
-        },
-        sanghLevel: {
-          type: String,
-          enum: ['national', 'state', 'district', 'city', 'area']
-        },
-        visitDate: {
-          type: Date
-        },
-        purpose: {
-          type: String
-        },
-        outcome: {
-          type: String
-        }
-      }]
+      details: [meetingSchema]
     },
+    // Visits Information (Super Simplified)
+    visits: [visitSchema],
     // Membership Information
-    membership: { 
-      type: String, 
-      required: true 
+    membershipCount: { 
+      type: Number, 
+      required: true,
+      min: 0
     },
     jainAadharCount: {
       type: Number,
       required: true,
       default: 0
     },
-    // Activities
-    projects: { 
-      type: String, 
-      required: true 
-    },
-    events: { 
-      type: String, 
-      required: true 
-    },
+    // Projects/Events Information
+    projects: [projectSchema],
     // Status
     status: {
       type: String,
@@ -169,8 +158,5 @@ reportingSchema.index({ submittedById: 1 });
 // Compound indexes
 reportingSchema.index({ recipientSanghId: 1, status: 1 });
 reportingSchema.index({ reportMonth: 1, reportYear: 1, status: 1 });
-// Indexes for official visits
-reportingSchema.index({ 'visitsReceived.count': 1 });
-reportingSchema.index({ 'visitsConducted.count': 1 });
 
 module.exports = mongoose.model('Reporting', reportingSchema);

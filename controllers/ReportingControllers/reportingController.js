@@ -3,7 +3,6 @@ const HierarchicalSangh = require('../../models/SanghModels/hierarchicalSanghMod
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 
 // Create a new report
-// Create a new report
 exports.createReport = async (req, res) => {
   try {
     const {
@@ -13,15 +12,13 @@ exports.createReport = async (req, res) => {
       treasurerName,
       reportMonth,
       reportYear,
-      generalMeetingCount,
-      boardMeetingCount,
-      membership,
+      generalMeetings,
+      boardMeetings,
+      membershipCount,
       jainAadharCount,
       projects,
-      events,
-      submittingSanghId,
-      visitsReceived,
-      visitsConducted
+      visits,
+      submittingSanghId
     } = req.body;
 
     if (!submittingSanghId) {
@@ -34,9 +31,8 @@ exports.createReport = async (req, res) => {
       return errorResponse(res, 'Submitting Sangh not found', 404);
     }
 
-
-    const recipientSanghId = submittingSangh.parentSangh 
-      ? submittingSangh.parentSangh 
+    const recipientSanghId = submittingSangh.parentSangh
+      ? submittingSangh.parentSangh
       : submittingSanghId;
 
     // Create the report
@@ -49,15 +45,32 @@ exports.createReport = async (req, res) => {
       treasurerName,
       reportMonth,
       reportYear,
-      generalMeetingCount,
-      boardMeetingCount,
-      membership,
+      generalMeetings: {
+        count: generalMeetings?.details?.length || 0,
+        details: generalMeetings?.details?.map(meeting => ({
+          meetingNumber: meeting.meetingNumber,
+          date: meeting.date,
+          attendanceCount: meeting.attendanceCount
+        })) || []
+      },
+      boardMeetings: {
+        count: boardMeetings?.details?.length || 0,
+        details: boardMeetings?.details?.map(meeting => ({
+          meetingNumber: meeting.meetingNumber,
+          date: meeting.date,
+          attendanceCount: meeting.attendanceCount
+        })) || []
+      },
+      membershipCount,
       jainAadharCount,
-      projects,
-      events,
-      submittedById: req.user._id,
-      ...(visitsReceived && { visitsReceived }),
-      ...(visitsConducted && { visitsConducted })
+      projects: projects || [],
+      visits: visits?.map(visit => ({
+        date: visit.date,
+        visitorName: visit.visitorName,
+        visitorLevel: visit.visitorLevel,
+        purpose: visit.purpose
+      })) || [],
+      submittedById: req.user._id
     });
 
     await newReport.save();
@@ -77,11 +90,11 @@ exports.getReportById = async (req, res) => {
       .populate('submittingSanghId', 'name level')
       .populate('recipientSanghId', 'name level')
       .populate('submittedById', 'firstName lastName');
-      
+
     if (!report) {
       return errorResponse(res, 'Report not found', 404);
     }
-    
+
     return successResponse(res, 'Report retrieved successfully', report);
   } catch (err) {
     console.error('Error retrieving report:', err);
@@ -95,15 +108,15 @@ exports.getAllReports = async (req, res) => {
     const { status, month, year } = req.query;
     const userId = req.user._id;
     const isSuperAdmin = req.user.role === 'superadmin';
-    
+
     // Build query based on filters
     const query = {};
-    
+
     // Filter by status if provided
     if (status) {
       query.status = status;
     }
-    
+
     // Filter by reporting period if provided
     if (month) {
       const parsedMonth = parseInt(month);
@@ -111,35 +124,35 @@ exports.getAllReports = async (req, res) => {
         query.reportMonth = parsedMonth;
       }
     }
-    
-    
+
+
     if (year) {
       const parsedYear = parseInt(year);
-      if(!isNaN(parsedYear)) {
-      query.reportYear = parsedYear;
+      if (!isNaN(parsedYear)) {
+        query.reportYear = parsedYear;
       }
     }
-    
+
     // For superadmin, show all reports
     // For others, only show reports they submitted or reports submitted to their Sangh
     if (!isSuperAdmin) {
       // Get user's Sangh IDs (user might be associated with multiple Sanghs)
       // This depends on your user-Sangh association structure
       // Simplified example:
-      const userSanghIds = req.user.sanghRoles ? 
+      const userSanghIds = req.user.sanghRoles ?
         req.user.sanghRoles.map(role => role.sanghId) : [];
-      
+
       query.$or = [
         { submittedById: userId },
         { recipientSanghId: { $in: userSanghIds } }
       ];
     }
-    
+
     // Execute query with pagination
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
-    
+
     const reports = await Reporting.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -147,9 +160,9 @@ exports.getAllReports = async (req, res) => {
       .populate('submittingSanghId', 'name level')
       .populate('recipientSanghId', 'name level')
       .populate('submittedById', 'firstName lastName');
-    
+
     const total = await Reporting.countDocuments(query);
-    
+
     return successResponse(res, 'Reports retrieved successfully', {
       reports,
       pagination: {
@@ -307,32 +320,32 @@ exports.getReceivedReports = async (req, res) => {
 exports.updateReport = async (req, res) => {
   const { id } = req.params;
   const updates = req.body;
-  
+
   try {
     // Find the report
     const report = await Reporting.findById(id);
-    
+
     if (!report) {
       return errorResponse(res, 'Report not found', 404);
     }
-    
+
     // Check permissions - only allow updates by the submitter
-    if (report.submittedById.toString() !== req.user._id.toString() && 
-        req.user.role !== 'superadmin') {
+    if (report.submittedById.toString() !== req.user._id.toString() &&
+      req.user.role !== 'superadmin') {
       return errorResponse(res, 'Not authorized to update this report', 403);
     }
-    
+
     // Don't allow changing submittingSanghId or recipientSanghId
     delete updates.submittingSanghId;
     delete updates.recipientSanghId;
-    
+
     // Update the report
     const updatedReport = await Reporting.findByIdAndUpdate(
       id,
       { $set: updates },
       { new: true, runValidators: true }
     );
-    
+
     return successResponse(res, 'Report updated successfully', updatedReport);
   } catch (err) {
     console.error('Error updating report:', err);
@@ -344,35 +357,35 @@ exports.updateReport = async (req, res) => {
 exports.updateReportStatus = async (req, res) => {
   const { id } = req.params;
   const { status, feedback } = req.body;
-  
+
   try {
     // Find the report
     const report = await Reporting.findById(id)
       .populate('recipientSanghId', 'name level');
-    
+
     if (!report) {
       return errorResponse(res, 'Report not found', 404);
     }
-    
+
     // Check permissions - only allow status updates by the recipient
     // This depends on your user-Sangh association structure
     // Simplified example:
-    const userSanghIds = req.user.sanghRoles ? 
+    const userSanghIds = req.user.sanghRoles ?
       req.user.sanghRoles.map(role => role.sanghId.toString()) : [];
-    
-    if (!userSanghIds.includes(report.recipientSanghId._id.toString()) && 
-        req.user.role !== 'superadmin') {
+
+    if (!userSanghIds.includes(report.recipientSanghId._id.toString()) &&
+      req.user.role !== 'superadmin') {
       return errorResponse(res, 'Not authorized to update this report status', 403);
     }
-    
+
     // Update status and feedback
     report.status = status || report.status;
     if (feedback) {
       report.feedback = feedback;
     }
-    
+
     await report.save();
-    
+
     return successResponse(res, 'Report status updated successfully', report);
   } catch (err) {
     console.error('Error updating report status:', err);
@@ -383,22 +396,22 @@ exports.updateReportStatus = async (req, res) => {
 // Delete a report by ID
 exports.deleteReport = async (req, res) => {
   const { id } = req.params;
-  
+
   try {
     const report = await Reporting.findById(id);
-    
+
     if (!report) {
       return errorResponse(res, 'Report not found', 404);
     }
-    
+
     // Check permissions - only allow deletion by the submitter or superadmin
-    if (report.submittedById.toString() !== req.user._id.toString() && 
-        req.user.role !== 'superadmin') {
+    if (report.submittedById.toString() !== req.user._id.toString() &&
+      req.user.role !== 'superadmin') {
       return errorResponse(res, 'Not authorized to delete this report', 403);
     }
-    
+
     await Reporting.findByIdAndDelete(id);
-    
+
     return successResponse(res, 'Report deleted successfully');
   } catch (err) {
     console.error('Error deleting report:', err);
@@ -406,7 +419,7 @@ exports.deleteReport = async (req, res) => {
   }
 };
 
-// Get top performing Sanghs
+// Get top performing Sanghs - Simplified to only consider membership and Jain Aadhar counts
 exports.getTopPerformers = async (req, res) => {
   try {
     const { level = 'all', period = 'month', limit = 3 } = req.query;
@@ -418,9 +431,9 @@ exports.getTopPerformers = async (req, res) => {
     let dateFilter = {};
 
     if (period === 'month') {
-      dateFilter = { 
-        reportMonth: currentMonth, 
-        reportYear: currentYear 
+      dateFilter = {
+        reportMonth: currentMonth,
+        reportYear: currentYear
       };
     } else if (period === 'quarter') {
       const currentQuarter = Math.ceil(currentMonth / 3);
@@ -460,10 +473,8 @@ exports.getTopPerformers = async (req, res) => {
       {
         $group: {
           _id: '$submittingSanghId',
-          totalJainAadharCount: { $sum: '$jainAadharCount' },
-          totalVisitsReceived: { $sum: '$visitsReceived.count' },
-          totalVisitsConducted: { $sum: '$visitsConducted.count' },
-          reportCount: { $sum: 1 },
+          membershipCount: { $max: '$membershipCount' },
+          jainAadharCount: { $max: '$jainAadharCount' },
           lastReport: { $max: '$createdAt' }
         }
       },
@@ -471,9 +482,8 @@ exports.getTopPerformers = async (req, res) => {
         $addFields: {
           performanceScore: {
             $add: [
-              { $multiply: ['$totalJainAadharCount', 2] },
-              { $multiply: [{ $add: ['$totalVisitsReceived', '$totalVisitsConducted'] }, 1.5] },
-              { $multiply: ['$reportCount', 1.5] } // fallback score for activity
+              { $multiply: ['$membershipCount', 1] },
+              { $multiply: ['$jainAadharCount', 1] }
             ]
           }
         }
@@ -496,11 +506,9 @@ exports.getTopPerformers = async (req, res) => {
           sanghLevel: '$sanghDetails.level',
           performanceScore: 1,
           metrics: {
-            jainAadharCount: '$totalJainAadharCount',
-            visitsReceived: '$totalVisitsReceived',
-            visitsConducted: '$totalVisitsConducted'
+            membershipCount: '$membershipCount',
+            jainAadharCount: '$jainAadharCount'
           },
-          reportCount: 1,
           lastReportDate: '$lastReport'
         }
       }
@@ -512,4 +520,3 @@ exports.getTopPerformers = async (req, res) => {
     return errorResponse(res, 'Server error', 500);
   }
 };
-
