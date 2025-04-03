@@ -29,7 +29,7 @@ const reportValidation = [
   check('reportYear').isInt({ min: 2000 }).withMessage('Valid report year is required'),
   check('membershipCount').isInt({ min: 0 }).withMessage('Membership count must be a positive number'),
   check('jainAadharCount').isInt({ min: 0 }).withMessage('Jain Aadhar count must be a positive number'),
-  check('submittingSanghId').notEmpty().withMessage('Submitting Sangh ID is required'),
+ 
   
   // Validate general meetings
   check('generalMeetings.details.*.meetingNumber').optional().isInt({ min: 1 }).withMessage('General meeting number must be a positive number'),

@@ -33,6 +33,7 @@ const hierarchicalSanghRoutes = require('./routes/SanghRoutes/hierarchicalSanghR
 const sanghPostRoutes = require('./routes/SanghRoutes/sanghPostRoutes');
 const panchPostRoutes = require('./routes/SanghRoutes/panchPostRoutes');
 const panchRoutes = require('./routes/SanghRoutes/panchRoutes');
+const paymentRoutes = require('./routes/PaymentRoutes/paymentRoutes');
 
 // Import JainVyapar routes
 const vyaparRoutes = require('./routes/VyaparRoutes/vyaparRoutes');
@@ -111,6 +112,7 @@ app.use("/api/granth", [authMiddleware, isAdmin], granthRoutes);
 app.use("/api/jainitihas", [authMiddleware, isAdmin], jainItihasRoutes);
 app.use('/api/yojana', [authMiddleware, isAdmin], govtYojanaRoutes);
 app.use('/api/pricing', require('./routes/PaymentRoutes/pricingRoutes'));
+app.use('/api/payments', authMiddleware, paymentRoutes);
 
 // Error handling
 app.use(notFound);

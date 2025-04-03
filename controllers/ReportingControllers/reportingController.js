@@ -17,25 +17,27 @@ exports.createReport = async (req, res) => {
       membershipCount,
       jainAadharCount,
       projects,
-      visits,
-      submittingSanghId
+      visits
     } = req.body;
 
-    if (!submittingSanghId) {
-      return errorResponse(res, 'Submitting Sangh ID is required', 400);
+    // ✅ Extract submittingSanghId from user's token-based sanghRoles
+    const user = req.user;
+    const presidentRole = user.sanghRoles?.find(role => role.role === 'president');
+
+    if (!presidentRole) {
+      return errorResponse(res, 'Only presidents can submit reports', 403);
     }
 
-    // Find the submitting Sangh
+    const submittingSanghId = presidentRole.sanghId;
+
+    // 🔎 Fetch the submitting sangh from DB
     const submittingSangh = await HierarchicalSangh.findById(submittingSanghId);
     if (!submittingSangh) {
       return errorResponse(res, 'Submitting Sangh not found', 404);
     }
 
-    const recipientSanghId = submittingSangh.parentSangh
-      ? submittingSangh.parentSangh
-      : submittingSanghId;
+    const recipientSanghId = submittingSangh.parentSangh || submittingSanghId;
 
-    // Create the report
     const newReport = new Reporting({
       submittingSanghId,
       recipientSanghId,
@@ -70,10 +72,11 @@ exports.createReport = async (req, res) => {
         visitorLevel: visit.visitorLevel,
         purpose: visit.purpose
       })) || [],
-      submittedById: req.user._id
+      submittedById: user._id
     });
 
     await newReport.save();
+
     return successResponse(res, 'Report created successfully', newReport, 201);
   } catch (err) {
     console.error('Error creating report:', err);

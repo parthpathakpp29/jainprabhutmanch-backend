@@ -7,12 +7,7 @@ const VyavahikBiodata = require('../../models/BioDataModels/VyavahikBiodata');
 const User = require('../../models/UserRegistrationModels/userModel');
 
 // Constants for payment amounts
-const PAYMENT_AMOUNTS = {
-    sangh: 1999 * 100,
-    panch: 499 * 100,
-    tirth: 1499 * 100,
-    sadhu: 0 
-};
+
 
 /**
  * Create a payment order for Vyapar registration
@@ -400,11 +395,48 @@ const completeBiodataRegistration = async (req, res) => {
     }
 };
 
+const getAllPayments = async (req, res) => {
+    try {
+        const { page = 1, limit = 10, status, entityType, userId } = req.query;
+
+        // Build query filters
+        const filters = {};
+        if (status) filters.status = status; // Filter by payment status
+        if (entityType) filters.entityType = entityType; // Filter by entity type (e.g., vyapar, biodata)
+        if (userId) filters.userId = userId; // Filter by user ID
+
+        // Fetch payments with pagination
+        const payments = await Payment.find(filters)
+            .sort({ createdAt: -1 }) // Sort by most recent
+            .skip((page - 1) * limit)
+            .limit(parseInt(limit));
+
+        const totalPayments = await Payment.countDocuments(filters);
+
+        return successResponse(res, 'Payments retrieved successfully', {
+            payments,
+            pagination: {
+                total: totalPayments,
+                page: parseInt(page),
+                pages: Math.ceil(totalPayments / limit),
+            },
+        });
+    } catch (error) {
+        console.error('Error fetching payments:', error);
+        return errorResponse(res, error.message, 500);
+    }
+};
+
+module.exports = {
+    getAllPayments,
+};
+
 module.exports = {
     createVyaparPaymentOrder,
     verifyVyaparPayment,
     completeVyaparRegistration,
     createBiodataPaymentOrder,
     verifyBiodataPayment,
-    completeBiodataRegistration
+    completeBiodataRegistration,
+    getAllPayments,
 };
