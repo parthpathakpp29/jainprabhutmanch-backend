@@ -210,19 +210,51 @@ const checkSanghCreationPermission = asyncHandler(async (req, res, next) => {
         }
         
         const { level, parentSanghId } = req.body;
+        const userId = req.user._id;
         
         if (!parentSanghId) {
             return errorResponse(res, 'Parent Sangh ID is required for non-admin users', 400);
         }
-        
-        // Check if user has president role for the parent Sangh
-        const hasPresidentRole = req.user.sanghRoles && req.user.sanghRoles.some(role => 
-            role.sanghId.toString() === parentSanghId && 
-            role.role === 'president'
+
+        // Find the user's highest level Sangh president role
+        const presidentRole = req.user.sanghRoles?.find(role => 
+            role.role === 'president' && 
+            role.sanghType === 'main'
         );
-        
-        if (!hasPresidentRole) {
-            return errorResponse(res, 'Only the president of a Sangh can create sub-Sanghs', 403);
+
+        if (!presidentRole) {
+            return errorResponse(res, 'You must be a Sangh president to create sub-Sanghs', 403);
+        }
+
+        // Get the parent Sangh details
+        const parentSangh = await HierarchicalSangh.findById(parentSanghId)
+            .select('level sanghType')
+            .lean();
+
+        if (!parentSangh) {
+            return errorResponse(res, 'Parent Sangh not found', 404);
+        }
+
+        // Check if parent Sangh is main type
+        if (parentSangh.sanghType !== 'main') {
+            return errorResponse(res, 'Parent Sangh must be a main Sangh', 400);
+        }
+
+        // Get the hierarchy levels in order
+        const levelHierarchy = ['country', 'state', 'district', 'city', 'area'];
+        const userLevelIndex = levelHierarchy.indexOf(presidentRole.level);
+        const parentLevelIndex = levelHierarchy.indexOf(parentSangh.level);
+        const targetLevelIndex = levelHierarchy.indexOf(level);
+
+        // Allow creation only if:
+        // 1. User's level is higher than both parent and target level
+        // 2. Parent level is higher than target level
+        if (userLevelIndex > targetLevelIndex || userLevelIndex > parentLevelIndex) {
+            return errorResponse(res, `As a ${presidentRole.level} level president, you cannot create or use Sanghs at higher levels`, 403);
+        }
+
+        if (parentLevelIndex >= targetLevelIndex) {
+            return errorResponse(res, `Parent Sangh's level (${parentSangh.level}) must be higher than the new Sangh's level (${level})`, 400);
         }
         
         next();
