@@ -220,44 +220,44 @@ const resendVerificationCode = asyncHandler(async (req, res) => {
 // Request password reset
 const requestPasswordReset = asyncHandler(async (req, res) => {
     const { email } = req.body;
-
+  
     if (!email) {
-        return errorResponse(res, 'Email is required', 400);
+      return errorResponse(res, 'Email is required', 400);
     }
-
+  
     const user = await User.findOne({ email });
-    
+  
+    // Security-friendly response
     if (!user) {
-        // For security reasons, don't reveal whether the email exists or not
-        return successResponse(res, {}, 'If your email is registered, you will receive a password reset code');
+      return successResponse(res, {}, 'If your email is registered, you will receive a password reset code');
     }
-
-    // Generate reset code
+  
+    // ✅ Add this check
+    if (!user.isEmailVerified) {
+      return errorResponse(res, 'Please verify your email before resetting your password', 403);
+    }
+  
+    // Continue generating code
     const resetCode = generateVerificationCode();
     const codeExpiry = new Date();
-    codeExpiry.setMinutes(codeExpiry.getMinutes() + 30); // Code expires in 30 minutes
-
+    codeExpiry.setMinutes(codeExpiry.getMinutes() + 30);
+  
     user.resetPasswordCode = {
-        code: resetCode,
-        expiresAt: codeExpiry
+      code: resetCode,
+      expiresAt: codeExpiry
     };
     await user.save();
-
-    // Send password reset email
+  
     try {
-        await sendPasswordResetEmail(email, user.firstName, resetCode);
+      await sendPasswordResetEmail(email, user.firstName, resetCode);
     } catch (error) {
-        console.error('Error sending password reset email:', error);
-        return errorResponse(res, 'Failed to send password reset email', 500);
+      console.error('Error sending password reset email:', error);
+      return errorResponse(res, 'Failed to send password reset email', 500);
     }
-
-    return successResponse(
-        res, 
-        {},
-        'Password reset code has been sent to your email',
-        200
-    );
-});
+  
+    return successResponse(res, {}, 'Password reset code has been sent to your email');
+  });
+  
 
 // Verify reset code and reset password
 const resetPassword = asyncHandler(async (req, res) => {
