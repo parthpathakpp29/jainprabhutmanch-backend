@@ -12,8 +12,8 @@ const { sendVerificationEmail, sendPasswordResetEmail } = require('../../service
 const crypto = require('crypto');
 
 const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, 
-    max: 5, 
+    windowMs: 15 * 60 * 1000,
+    max: 5,
     message: { success: false, error: 'Too many login attempts. Please try again later.' }
 });
 
@@ -29,24 +29,24 @@ const registerUser = [
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return errorResponse(
-                res, 
-                'Validation failed', 
-                400, 
+                res,
+                'Validation failed',
+                400,
                 errors.array().map(err => ({ field: err.param, message: err.msg }))
             );
         }
 
-        const { 
-            firstName, 
-            lastName, 
+        const {
+            firstName,
+            lastName,
             email,
-            phoneNumber, 
-            password, 
-            birthDate, 
-            gender, 
+            phoneNumber,
+            password,
+            birthDate,
+            gender,
             city,
             state,
-            district 
+            district
         } = req.body;
 
         // Check if user already exists
@@ -56,9 +56,16 @@ const registerUser = [
         }
 
         const existingUserByEmail = await User.findOne({ email });
+
         if (existingUserByEmail) {
-            return errorResponse(res, 'User with this email already exists', 400);
+            if (existingUserByEmail.isEmailVerified) {
+                return errorResponse(res, 'User with this email already exists', 400);
+            }
+
+            // 💡 Delete old unverified user to allow clean re-registration
+            await User.deleteOne({ _id: existingUserByEmail._id });
         }
+
 
         // Generate verification code
         const verificationCode = generateVerificationCode();
@@ -66,7 +73,7 @@ const registerUser = [
         codeExpiry.setMinutes(codeExpiry.getMinutes() + 30); // Code expires in 30 minutes
 
         // Enhanced name formatting
-        const fullName = lastName.toLowerCase() === 'jain' 
+        const fullName = lastName.toLowerCase() === 'jain'
             ? `${firstName} Jain`
             : `${firstName} Jain (${lastName})`;
 
@@ -94,7 +101,7 @@ const registerUser = [
         // Send verification email
         try {
             await sendVerificationEmail(email, firstName, verificationCode);
-         
+
 
         } catch (error) {
             // Don't fail registration if email fails, but log the error
@@ -107,10 +114,10 @@ const registerUser = [
         delete userResponse.verificationCode;
 
         return successResponse(
-            res, 
+            res,
             {
                 user: userResponse,
-                nextStep: 'verify_email' 
+                nextStep: 'verify_email'
             },
             'User registered successfully. Please verify your email.',
             201
@@ -127,7 +134,7 @@ const verifyEmail = asyncHandler(async (req, res) => {
     }
 
     const user = await User.findOne({ email });
-    
+
     if (!user) {
         return errorResponse(res, 'User not found', 404);
     }
@@ -152,7 +159,7 @@ const verifyEmail = asyncHandler(async (req, res) => {
     user.isEmailVerified = true;
     user.verificationCode = undefined;
     user.registrationStep = 'initial';
-    
+
     const token = generateToken(user);
     user.token = token;
     await user.save();
@@ -162,11 +169,11 @@ const verifyEmail = asyncHandler(async (req, res) => {
     delete userResponse.__v;
 
     return successResponse(
-        res, 
+        res,
         {
             user: userResponse,
             token,
-            nextStep: 'profile_picture' 
+            nextStep: 'profile_picture'
         },
         'Email verified successfully',
         200
@@ -182,7 +189,7 @@ const resendVerificationCode = asyncHandler(async (req, res) => {
     }
 
     const user = await User.findOne({ email });
-    
+
     if (!user) {
         return errorResponse(res, 'User not found', 404);
     }
@@ -210,7 +217,7 @@ const resendVerificationCode = asyncHandler(async (req, res) => {
     }
 
     return successResponse(
-        res, 
+        res,
         {},
         'Verification code resent successfully',
         200
@@ -220,44 +227,44 @@ const resendVerificationCode = asyncHandler(async (req, res) => {
 // Request password reset
 const requestPasswordReset = asyncHandler(async (req, res) => {
     const { email } = req.body;
-  
+
     if (!email) {
-      return errorResponse(res, 'Email is required', 400);
+        return errorResponse(res, 'Email is required', 400);
     }
-  
+
     const user = await User.findOne({ email });
-  
+
     // Security-friendly response
     if (!user) {
-      return successResponse(res, {}, 'If your email is registered, you will receive a password reset code');
+        return successResponse(res, {}, 'If your email is registered, you will receive a password reset code');
     }
-  
+
     // ✅ Add this check
     if (!user.isEmailVerified) {
-      return errorResponse(res, 'Please verify your email before resetting your password', 403);
+        return errorResponse(res, 'Please verify your email before resetting your password', 403);
     }
-  
+
     // Continue generating code
     const resetCode = generateVerificationCode();
     const codeExpiry = new Date();
     codeExpiry.setMinutes(codeExpiry.getMinutes() + 30);
-  
+
     user.resetPasswordCode = {
-      code: resetCode,
-      expiresAt: codeExpiry
+        code: resetCode,
+        expiresAt: codeExpiry
     };
     await user.save();
-  
+
     try {
-      await sendPasswordResetEmail(email, user.firstName, resetCode);
+        await sendPasswordResetEmail(email, user.firstName, resetCode);
     } catch (error) {
-      console.error('Error sending password reset email:', error);
-      return errorResponse(res, 'Failed to send password reset email', 500);
+        console.error('Error sending password reset email:', error);
+        return errorResponse(res, 'Failed to send password reset email', 500);
     }
-  
+
     return successResponse(res, {}, 'Password reset code has been sent to your email');
-  });
-  
+});
+
 
 // Verify reset code and reset password
 const resetPassword = asyncHandler(async (req, res) => {
@@ -268,7 +275,7 @@ const resetPassword = asyncHandler(async (req, res) => {
     }
 
     const user = await User.findOne({ email });
-    
+
     if (!user) {
         return errorResponse(res, 'User not found', 404);
     }
@@ -291,7 +298,7 @@ const resetPassword = asyncHandler(async (req, res) => {
     await user.save();
 
     return successResponse(
-        res, 
+        res,
         {},
         'Password has been reset successfully',
         200
@@ -304,10 +311,10 @@ const loginUser = [
     userValidation.login,
     asyncHandler(async (req, res) => {
         const { email, password } = req.body;
-        
+
         try {
             const user = await User.findOne({ email });
-            
+
             if (!user || !(await user.isPasswordMatched(password))) {
                 return errorResponse(res, "Invalid email or password", 401);
             }
@@ -337,7 +344,7 @@ const loginUser = [
             };
 
             return successResponse(
-                res, 
+                res,
                 {
                     user: userResponse,
                     token: token,
@@ -383,7 +390,7 @@ const getAllUsers = asyncHandler(async (req, res) => {
     const total = await User.countDocuments(query);
 
     return successResponse(
-        res, 
+        res,
         {
             users,
             currentPage: parseInt(page),
@@ -398,7 +405,7 @@ const getAllUsers = asyncHandler(async (req, res) => {
 // Enhanced user profile retrieval
 const getUserById = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    
+
     const user = await User.findById(id)
         .select('-password -__v -verificationCode -resetPasswordCode')
         .populate({
@@ -416,7 +423,7 @@ const getUserById = asyncHandler(async (req, res) => {
     userResponse.postCount = user.posts.length;
 
     return successResponse(
-        res, 
+        res,
         {
             user: userResponse
         },
@@ -454,18 +461,18 @@ const updateUserById = asyncHandler(async (req, res) => {
         if (existingUser) {
             return errorResponse(res, 'Email is already in use', 400);
         }
-        
+
         // Require re-verification for new email
         const verificationCode = generateVerificationCode();
         const codeExpiry = new Date();
         codeExpiry.setMinutes(codeExpiry.getMinutes() + 30);
-        
+
         updates.isEmailVerified = false;
         updates.verificationCode = {
             code: verificationCode,
             expiresAt: codeExpiry
         };
-        
+
         // Send verification email to new address
         try {
             await sendVerificationEmail(updates.email, user.firstName, verificationCode);
@@ -482,7 +489,7 @@ const updateUserById = asyncHandler(async (req, res) => {
     ).select('-password -__v -verificationCode -resetPasswordCode');
 
     return successResponse(
-        res, 
+        res,
         {
             user: updatedUser,
             emailVerificationRequired: updates.email && updates.email !== user.email
@@ -518,7 +525,7 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
         }
 
         return successResponse(
-            res, 
+            res,
             {
                 user,
                 registrationComplete: true
@@ -535,7 +542,7 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
 const skipProfilePicture = asyncHandler(async (req, res) => {
     try {
         const userId = req.user._id;
-        
+
         const user = await User.findByIdAndUpdate(
             userId,
             { registrationStep: 'completed' },
@@ -547,7 +554,7 @@ const skipProfilePicture = asyncHandler(async (req, res) => {
         }
 
         return successResponse(
-            res, 
+            res,
             {
                 user,
                 registrationComplete: true
@@ -573,7 +580,7 @@ const logoutUser = asyncHandler(async (req, res) => {
         await user.save();
 
         return successResponse(
-            res, 
+            res,
             {},
             "Logged out successfully",
             200
@@ -587,11 +594,11 @@ const logoutUser = asyncHandler(async (req, res) => {
 const searchUsers = asyncHandler(async (req, res) => {
     try {
         const { query } = req.query;
-        
+
         if (!query || query.length < 3) {
             return errorResponse(res, 'Search query must be at least 3 characters', 400);
         }
-        
+
         const users = await User.find({
             $or: [
                 { firstName: { $regex: query, $options: 'i' } },
@@ -600,8 +607,8 @@ const searchUsers = asyncHandler(async (req, res) => {
                 { email: { $regex: query, $options: 'i' } }
             ]
         }).select('_id firstName lastName phoneNumber email roles profilePicture')
-          .limit(10);
-        
+            .limit(10);
+
         // Format user data for frontend
         const formattedUsers = users.map(user => ({
             _id: user._id,
@@ -611,7 +618,7 @@ const searchUsers = asyncHandler(async (req, res) => {
             roles: user.roles || [],
             profilePicture: user.profilePicture || ''
         }));
-        
+
         return successResponse(res, formattedUsers, 'Users retrieved successfully');
     } catch (error) {
         return errorResponse(res, error.message, 500);
