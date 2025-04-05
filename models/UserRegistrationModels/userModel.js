@@ -22,6 +22,31 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
+    email: {
+      type: String,
+      required: [true, 'Email is required'],
+      unique: true,
+      trim: true,
+      lowercase: true,
+      validate: {
+        validator: function(v) {
+          return validator.isEmail(v);
+        },
+        message: props => `${props.value} is not a valid email address!`
+      }
+    },
+    isEmailVerified: {
+      type: Boolean,
+      default: false
+    },
+    verificationCode: {
+      code: String,
+      expiresAt: Date
+    },
+    resetPasswordCode: {
+      code: String,
+      expiresAt: Date
+    },
     birthDate: {
       type: Date,
       required: [true, 'Birth date is required'],
@@ -40,7 +65,6 @@ const userSchema = new mongoose.Schema(
         message: props => `${props.value} is not a valid phone number!`
       },
       required: [true, 'Phone number is required'],
-      
     },
     password: {
       type: String,
@@ -240,6 +264,7 @@ userSchema.methods.isPasswordMatched = isPasswordMatched;
 
 // Update indexes to match schema changes
 userSchema.index({ phoneNumber: 1 }); 
+userSchema.index({ email: 1 }); // Add index for email
 userSchema.index({ jainAadharNumber: 1 }, { sparse: true }); 
 userSchema.index({ jainAadharStatus: 1 });
 userSchema.index({ role: 1 });

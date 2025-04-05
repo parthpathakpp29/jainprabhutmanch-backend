@@ -200,6 +200,7 @@ const upload = multer({
       }
     },
     cacheControl: 'public, max-age=31536000' // 1 year cache
+    // Remove this line to avoid using ACLs: ACL: 'private'
   }),
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB
@@ -207,6 +208,7 @@ const upload = multer({
   },
   fileFilter: fileFilter
 });
+
 
 // Enhanced error handling middleware
 const handleMulterError = (err, req, res, next) => {

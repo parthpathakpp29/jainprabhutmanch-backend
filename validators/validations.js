@@ -10,13 +10,14 @@ const jainAadharValidation = [
   body('contactDetails.number').matches(/^\d{10}$/).withMessage('Invalid phone number'),
 ];
 
-// User Registration Validation
+//  Registration Validation
 const userValidation = {
   register: [
     body('firstName').notEmpty().trim().escape()
       .isLength({ min: 2, max: 30 }).withMessage('First name must be between 2 and 30 characters'),
     body('lastName').notEmpty().trim().escape()
       .isLength({ min: 2, max: 30 }).withMessage('Last name must be between 2 and 30 characters'),
+    body('email').isEmail().withMessage('A valid email is required'),
     body('phoneNumber').matches(/^\d{10}$/).withMessage('Phone number must be 10 digits'),
     body('password')
       .isLength({ min: 8 })
@@ -25,21 +26,39 @@ const userValidation = {
     body('birthDate').isISO8601().withMessage('Invalid date format'),
     body('gender').isIn(['Male', 'Female', 'Other']).withMessage('Invalid gender value'),
     body('city').notEmpty().trim().escape(),
+    body('state').notEmpty().trim().escape(),
+    body('district').notEmpty().trim().escape()
   ],
+
   login: [
-    check('fullName')
-      .trim()
-      .notEmpty()
-      .withMessage('Full name is required')
-      .matches(/^[a-zA-Z\s]+$/)
-      .withMessage('Full name can only contain letters and spaces')
-      .isLength({ min: 4, max: 50 })
-      .withMessage('Full name must be between 4 and 50 characters'),
-    check('password')
-      .notEmpty()
-      .withMessage('Password is required')
+    body('email').isEmail().withMessage('Valid email is required'),
+    body('password').notEmpty().withMessage('Password is required')
+  ],
+
+  verifyEmail: [
+    body('email').isEmail().withMessage('Email is required'),
+    body('code').isLength({ min: 6, max: 6 }).withMessage('Verification code must be 6 digits')
+  ],
+
+  resendCode: [
+    body('email').isEmail().withMessage('Email is required')
+  ],
+
+  requestPasswordReset: [
+    body('email').isEmail().withMessage('Email is required')
+  ],
+
+  resetPassword: [
+    body('email').isEmail().withMessage('Email is required'),
+    body('code').isLength({ min: 6, max: 6 }).withMessage('Reset code must be 6 digits'),
+    body('newPassword')
+      .isLength({ min: 8 })
+      .matches(/^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*])/)
+      .withMessage('Password must contain at least 8 characters, one uppercase, one lowercase, one number, and one special character')
   ]
 };
+
+
 
 // Post Validation
 const postValidation = {

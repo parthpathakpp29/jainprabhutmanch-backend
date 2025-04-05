@@ -7,6 +7,9 @@ const dotenv = require("dotenv").config();
 const { userValidation } = require('../../validators/validations');
 const { generateToken } = require('../../helpers/authHelpers');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../../services/nodemailerEmailService');
+
+const crypto = require('crypto');
 
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, 
@@ -14,7 +17,12 @@ const authLimiter = rateLimit({
     message: { success: false, error: 'Too many login attempts. Please try again later.' }
 });
 
-// Register new user with enhanced security
+// Generate a random 6-digit code
+const generateVerificationCode = () => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+// Register new user with enhanced security and email verification
 const registerUser = [
     userValidation.register,
     asyncHandler(async (req, res) => {
@@ -31,6 +39,7 @@ const registerUser = [
         const { 
             firstName, 
             lastName, 
+            email,
             phoneNumber, 
             password, 
             birthDate, 
@@ -41,10 +50,20 @@ const registerUser = [
         } = req.body;
 
         // Check if user already exists
-        const existingUser = await User.findOne({ phoneNumber });
-        if (existingUser) {
+        const existingUserByPhone = await User.findOne({ phoneNumber });
+        if (existingUserByPhone) {
             return errorResponse(res, 'User with this phone number already exists', 400);
         }
+
+        const existingUserByEmail = await User.findOne({ email });
+        if (existingUserByEmail) {
+            return errorResponse(res, 'User with this email already exists', 400);
+        }
+
+        // Generate verification code
+        const verificationCode = generateVerificationCode();
+        const codeExpiry = new Date();
+        codeExpiry.setMinutes(codeExpiry.getMinutes() + 30); // Code expires in 30 minutes
 
         // Enhanced name formatting
         const fullName = lastName.toLowerCase() === 'jain' 
@@ -55,6 +74,7 @@ const registerUser = [
             firstName,
             lastName,
             fullName,
+            email,
             phoneNumber,
             password,
             birthDate,
@@ -62,61 +82,246 @@ const registerUser = [
             city,
             state,
             district,
+            verificationCode: {
+                code: verificationCode,
+                expiresAt: codeExpiry
+            },
             lastLogin: new Date(),
             accountStatus: 'active',
-            registrationStep: 'initial'
+            registrationStep: 'verification_pending'
         });
 
-        const token = generateToken(newUser);
-        newUser.token = token;
-        await newUser.save();
+        // Send verification email
+        try {
+            await sendVerificationEmail(email, firstName, verificationCode);
+         
+
+        } catch (error) {
+            // Don't fail registration if email fails, but log the error
+            console.error('Error sending verification email:', error);
+        }
 
         const userResponse = newUser.toObject();
         delete userResponse.password;
         delete userResponse.__v;
+        delete userResponse.verificationCode;
 
         return successResponse(
             res, 
             {
                 user: userResponse,
-                token,
-                nextStep: 'profile_picture' 
+                nextStep: 'verify_email' 
             },
-            'User registered successfully',
+            'User registered successfully. Please verify your email.',
             201
         );
     })
 ];
+
+// Verify email with verification code
+const verifyEmail = asyncHandler(async (req, res) => {
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+        return errorResponse(res, 'Email and verification code are required', 400);
+    }
+
+    const user = await User.findOne({ email });
+    
+    if (!user) {
+        return errorResponse(res, 'User not found', 404);
+    }
+
+    if (user.isEmailVerified) {
+        return errorResponse(res, 'Email is already verified', 400);
+    }
+
+    if (!user.verificationCode || !user.verificationCode.code) {
+        return errorResponse(res, 'Verification code not found. Please request a new one.', 400);
+    }
+
+    if (new Date() > user.verificationCode.expiresAt) {
+        return errorResponse(res, 'Verification code has expired. Please request a new one.', 400);
+    }
+
+    if (user.verificationCode.code !== code) {
+        return errorResponse(res, 'Invalid verification code', 400);
+    }
+
+    // Mark email as verified and clear verification code
+    user.isEmailVerified = true;
+    user.verificationCode = undefined;
+    user.registrationStep = 'initial';
+    
+    const token = generateToken(user);
+    user.token = token;
+    await user.save();
+
+    const userResponse = user.toObject();
+    delete userResponse.password;
+    delete userResponse.__v;
+
+    return successResponse(
+        res, 
+        {
+            user: userResponse,
+            token,
+            nextStep: 'profile_picture' 
+        },
+        'Email verified successfully',
+        200
+    );
+});
+
+// Resend verification code
+const resendVerificationCode = asyncHandler(async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+        return errorResponse(res, 'Email is required', 400);
+    }
+
+    const user = await User.findOne({ email });
+    
+    if (!user) {
+        return errorResponse(res, 'User not found', 404);
+    }
+
+    if (user.isEmailVerified) {
+        return errorResponse(res, 'Email is already verified', 400);
+    }
+
+    // Generate new verification code
+    const verificationCode = generateVerificationCode();
+    const codeExpiry = new Date();
+    codeExpiry.setMinutes(codeExpiry.getMinutes() + 30); // Code expires in 30 minutes
+
+    user.verificationCode = {
+        code: verificationCode,
+        expiresAt: codeExpiry
+    };
+    await user.save();
+
+    // Send verification email
+    try {
+        await sendVerificationEmail(email, user.firstName, verificationCode);
+    } catch (error) {
+        return errorResponse(res, 'Failed to send verification email', 500);
+    }
+
+    return successResponse(
+        res, 
+        {},
+        'Verification code resent successfully',
+        200
+    );
+});
+
+// Request password reset
+const requestPasswordReset = asyncHandler(async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+        return errorResponse(res, 'Email is required', 400);
+    }
+
+    const user = await User.findOne({ email });
+    
+    if (!user) {
+        // For security reasons, don't reveal whether the email exists or not
+        return successResponse(res, {}, 'If your email is registered, you will receive a password reset code');
+    }
+
+    // Generate reset code
+    const resetCode = generateVerificationCode();
+    const codeExpiry = new Date();
+    codeExpiry.setMinutes(codeExpiry.getMinutes() + 30); // Code expires in 30 minutes
+
+    user.resetPasswordCode = {
+        code: resetCode,
+        expiresAt: codeExpiry
+    };
+    await user.save();
+
+    // Send password reset email
+    try {
+        await sendPasswordResetEmail(email, user.firstName, resetCode);
+    } catch (error) {
+        console.error('Error sending password reset email:', error);
+        return errorResponse(res, 'Failed to send password reset email', 500);
+    }
+
+    return successResponse(
+        res, 
+        {},
+        'Password reset code has been sent to your email',
+        200
+    );
+});
+
+// Verify reset code and reset password
+const resetPassword = asyncHandler(async (req, res) => {
+    const { email, code, newPassword } = req.body;
+
+    if (!email || !code || !newPassword) {
+        return errorResponse(res, 'Email, reset code, and new password are required', 400);
+    }
+
+    const user = await User.findOne({ email });
+    
+    if (!user) {
+        return errorResponse(res, 'User not found', 404);
+    }
+
+    if (!user.resetPasswordCode || !user.resetPasswordCode.code) {
+        return errorResponse(res, 'Reset code not found. Please request a new one.', 400);
+    }
+
+    if (new Date() > user.resetPasswordCode.expiresAt) {
+        return errorResponse(res, 'Reset code has expired. Please request a new one.', 400);
+    }
+
+    if (user.resetPasswordCode.code !== code) {
+        return errorResponse(res, 'Invalid reset code', 400);
+    }
+
+    // Update password and clear reset code
+    user.password = newPassword;
+    user.resetPasswordCode = undefined;
+    await user.save();
+
+    return successResponse(
+        res, 
+        {},
+        'Password has been reset successfully',
+        200
+    );
+});
 
 // Enhanced login with rate limiting and security
 const loginUser = [
     authLimiter,
     userValidation.login,
     asyncHandler(async (req, res) => {
-        const { fullName, password } = req.body;
+        const { email, password } = req.body;
         
         try {
-            // Split fullName into firstName and lastName
-            const [firstName, ...lastNameParts] = fullName.split(' ');
-            const lastName = lastNameParts.join(' ');
-
-            if (!firstName || !lastName) {
-                return errorResponse(res, "Please enter your full name", 400);
-            }
-
-            // Find user by firstName and lastName
-            const user = await User.findOne({ 
-                firstName: new RegExp(`^${firstName}$`, 'i'),
-                lastName: new RegExp(`^${lastName}$`, 'i')
-            });
+            const user = await User.findOne({ email });
             
             if (!user || !(await user.isPasswordMatched(password))) {
-                return errorResponse(res, "Invalid full name or password", 401);
+                return errorResponse(res, "Invalid email or password", 401);
+            }
+
+            if (!user.isEmailVerified) {
+                return errorResponse(res, "Please verify your email before logging in", 401, {
+                    requiresEmailVerification: true
+                });
             }
 
             // Generate tokens
             const token = generateToken(user);
             user.token = token;
+            user.lastLogin = new Date();
             await user.save();
 
             const userResponse = user.toObject();
@@ -159,7 +364,8 @@ const getAllUsers = asyncHandler(async (req, res) => {
         query.$or = [
             { firstName: searchRegex },
             { lastName: searchRegex },
-            { fullName: searchRegex }
+            { fullName: searchRegex },
+            { email: searchRegex }
         ];
     }
 
@@ -169,7 +375,7 @@ const getAllUsers = asyncHandler(async (req, res) => {
     if (gender) query.gender = gender;
 
     const users = await User.find(query)
-        .select('-password -__v')
+        .select('-password -__v -verificationCode -resetPasswordCode')
         .skip(skip)
         .limit(parseInt(limit))
         .sort({ createdAt: -1 });
@@ -194,7 +400,7 @@ const getUserById = asyncHandler(async (req, res) => {
     const { id } = req.params;
     
     const user = await User.findById(id)
-        .select('-password -__v')
+        .select('-password -__v -verificationCode -resetPasswordCode')
         .populate({
             path: 'posts',
             select: '-__v',
@@ -227,6 +433,9 @@ const updateUserById = asyncHandler(async (req, res) => {
     // Prevent updating sensitive fields
     delete updates.password;
     delete updates.token;
+    delete updates.isEmailVerified;
+    delete updates.verificationCode;
+    delete updates.resetPasswordCode;
 
     const user = await User.findById(id);
     if (!user) {
@@ -238,16 +447,45 @@ const updateUserById = asyncHandler(async (req, res) => {
         return errorResponse(res, 'Invalid phone number format', 400);
     }
 
+    // Check if email is being updated
+    if (updates.email && updates.email !== user.email) {
+        // Check if the new email is already in use
+        const existingUser = await User.findOne({ email: updates.email });
+        if (existingUser) {
+            return errorResponse(res, 'Email is already in use', 400);
+        }
+        
+        // Require re-verification for new email
+        const verificationCode = generateVerificationCode();
+        const codeExpiry = new Date();
+        codeExpiry.setMinutes(codeExpiry.getMinutes() + 30);
+        
+        updates.isEmailVerified = false;
+        updates.verificationCode = {
+            code: verificationCode,
+            expiresAt: codeExpiry
+        };
+        
+        // Send verification email to new address
+        try {
+            await sendVerificationEmail(updates.email, user.firstName, verificationCode);
+        } catch (error) {
+            console.error('Error sending verification email:', error);
+            // Continue with update even if email fails
+        }
+    }
+
     const updatedUser = await User.findByIdAndUpdate(
         id,
         { $set: updates },
         { new: true, runValidators: true }
-    ).select('-password -__v');
+    ).select('-password -__v -verificationCode -resetPasswordCode');
 
     return successResponse(
         res, 
         {
-            user: updatedUser
+            user: updatedUser,
+            emailVerificationRequired: updates.email && updates.email !== user.email
         },
         'User updated successfully',
         200
@@ -273,7 +511,7 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
             userId,
             updateData,
             { new: true }
-        ).select('-password -__v');
+        ).select('-password -__v -verificationCode -resetPasswordCode');
 
         if (!user) {
             return errorResponse(res, 'User not found', 404);
@@ -302,7 +540,7 @@ const skipProfilePicture = asyncHandler(async (req, res) => {
             userId,
             { registrationStep: 'completed' },
             { new: true }
-        ).select('-password -__v');
+        ).select('-password -__v -verificationCode -resetPasswordCode');
 
         if (!user) {
             return errorResponse(res, 'User not found', 404);
@@ -379,7 +617,6 @@ const searchUsers = asyncHandler(async (req, res) => {
         return errorResponse(res, error.message, 500);
     }
 });
-
 module.exports = {
     registerUser,
     loginUser,
@@ -389,5 +626,9 @@ module.exports = {
     uploadProfilePicture,
     skipProfilePicture,
     logoutUser,
-    searchUsers
+    searchUsers,
+    verifyEmail,
+    resendVerificationCode,
+    requestPasswordReset,
+    resetPassword
 };

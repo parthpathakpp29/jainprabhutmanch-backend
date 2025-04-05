@@ -8,7 +8,11 @@ const {
     logoutUser,
     uploadProfilePicture,
     skipProfilePicture,
-    searchUsers
+    searchUsers,
+    verifyEmail,
+    resendVerificationCode,
+    requestPasswordReset,
+    resetPassword
 } = require('../../controllers/UserRegistrationControllers/userController');
 const { authMiddleware, checkAccess } = require('../../middlewares/authMiddlewares');
 const upload = require('../../middlewares/uploadMiddleware');
@@ -54,11 +58,18 @@ router.post('/register',
 router.post('/login', 
     loginLimiter,
     [
-        body('phoneNumber').matches(/\d{10}/).withMessage('Phone number must be 10 digits'),
+        body('email').isEmail().withMessage('Valid email is required'),
         body('password').notEmpty().withMessage('Password is required')
     ],
     loginUser
 );
+
+router.post('/verify-email', verifyEmail);
+router.post('/resend-code', resendVerificationCode);
+
+// Password reset
+router.post('/request-password-reset', requestPasswordReset);
+router.post('/reset-password', resetPassword);
 
 // Protected routes
 router.use(authMiddleware);
@@ -101,5 +112,7 @@ router.post(
     '/skip-profile-picture',
     skipProfilePicture
 );
+
+
 
 module.exports = router;
