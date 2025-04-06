@@ -4,6 +4,7 @@ const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
 const upload = require('../../middlewares/uploadMiddleware');
 const { createLikeNotification, createCommentNotification, createReplyNotification } = require('../../utils/notificationUtils');
+const { getOrSetCache,invalidateCache  } = require('../../utils/cache');
 
 // Create post
 const createSadhuPost = async (req, res) => {
@@ -43,6 +44,7 @@ const createSadhuPost = async (req, res) => {
         await post.save();
 
         await post.populate('postedByUserId', 'firstName lastName profilePicture');
+        await invalidateCache(`sadhuPosts:${req.sadhu._id}:page:1:limit:10`);
 
         return successResponse(res, {
             message: 'Post created successfully',
@@ -81,36 +83,38 @@ const createSadhuPost = async (req, res) => {
 };
 
 // Get posts by sadhu ID (public)
+
+
 const getSadhuPosts = async (req, res) => {
-    try {
-        const { sadhuId } = req.params;
-        const { page = 1, limit = 10 } = req.query;
-        
-        const posts = await SadhuPost.find({ 
-            sadhuId,
-            isHidden: false 
-        })
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .populate('sadhuId', 'sadhuName uploadImage')
-        .populate('postedByUserId', 'firstName lastName profilePicture')
-        .populate('comments.user', 'firstName lastName profilePicture');
+  const { sadhuId } = req.params;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
 
-        const total = await SadhuPost.countDocuments({
-            sadhuId,
-            isHidden: false
-        });
+  const cacheKey = `sadhuPosts:${sadhuId}:page:${page}:limit:${limit}`;
 
-        return successResponse(res, {
-            posts,
-            totalPosts: total,
-            currentPage: parseInt(page),
-            totalPages: Math.ceil(total / limit)
-        });
-    } catch (error) {
-        return errorResponse(res, error.message);
-    }
+  const result = await getOrSetCache(cacheKey, async () => {
+    const posts = await SadhuPost.find({ sadhuId, isHidden: false })
+      .populate('sadhuId', 'sadhuName uploadImage')
+      .populate('postedByUserId', 'firstName lastName profilePicture')
+      .populate('comments.user', 'firstName lastName profilePicture')
+      .sort('-createdAt')
+      .skip(skip)
+      .limit(limit);
+
+    const total = await SadhuPost.countDocuments({ sadhuId, isHidden: false });
+
+    return {
+      posts,
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit)
+      }
+    };
+  }, 180);
+
+  return successResponse(res, result, 'Sadhu posts fetched successfully');
 };
 
 // Toggle like on post
@@ -566,6 +570,42 @@ const toggleHideSadhuPost = async (req, res) => {
     }
 };
 
+const getAllSadhuPosts = async (req, res) => {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const skip = (page - 1) * limit;
+  
+      const cacheKey = `allSadhuPosts:page:${page}:limit:${limit}`;
+  
+      const result = await getOrSetCache(cacheKey, async () => {
+        const posts = await SadhuPost.find({ isHidden: false })
+          .populate('sadhuId', 'sadhuName uploadImage')
+          .populate('postedByUserId', 'firstName lastName profilePicture')
+          .populate('comments.user', 'firstName lastName profilePicture')
+          .sort('-createdAt')
+          .skip(skip)
+          .limit(limit)
+          .lean();
+  
+        const total = await SadhuPost.countDocuments({ isHidden: false });
+  
+        return {
+          posts,
+          pagination: {
+            total,
+            page,
+            pages: Math.ceil(total / limit)
+          }
+        };
+      }, 180); // 3-minute cache
+  
+      return successResponse(res, result, 'All Sadhu posts fetched');
+    } catch (error) {
+      return errorResponse(res, 'Failed to fetch Sadhu posts', 500, error.message);
+    }
+  };
+
 module.exports = {
     createSadhuPost,
     getSadhuPosts,
@@ -579,5 +619,6 @@ module.exports = {
     getSadhuReplies,
     deleteSadhuReply,
     deleteSadhuMedia,
-    toggleHideSadhuPost
+    toggleHideSadhuPost,
+    getAllSadhuPosts 
 };

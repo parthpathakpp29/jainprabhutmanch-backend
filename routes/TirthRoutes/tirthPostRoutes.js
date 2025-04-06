@@ -16,11 +16,14 @@ const {
     getReplies,
     deleteReply,
     deleteMedia,
-    toggleHidePost
+    toggleHidePost,
+    getAllTirthPosts
 } = require('../../controllers/TirthControllers/tirthPostController');
 const { body, param } = require('express-validator');
 
 // Public routes
+router.get('/all-posts', getAllTirthPosts); // New route for all Tirth posts
+
 router.get('/:tirthId/posts', getPosts);
 router.get('/posts/:postId', getPostById);
 

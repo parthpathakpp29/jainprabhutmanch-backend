@@ -16,10 +16,12 @@ const PanchPost = require('../../models/SanghModels/panchPostModel');
 const VyaparPost = require('../../models/VyaparModels/vyaparPostModel');
 const TirthPost = require('../../models/TirthModels/tirthPostModel');
 const SadhuPost = require('../../models/SadhuModels/sadhuPostModel');
+const { getOrSetCache, invalidateCache } = require('../../utils/cache');
 
 // Create a post
+// postController.js
+
 const createPost = [
-  
   ...postValidation.create,
   asyncHandler(async (req, res) => {
     const errors = validationResult(req);
@@ -57,11 +59,17 @@ const createPost = [
     const post = await Post.create({ user: userId, caption, media });
     user.posts.push(post._id);
     await user.save();
+
+    await invalidatePattern(`userPosts:${userId}:*`); // Invalidate all paginated user post caches
+    await invalidateCache('combinedFeed:*'); // Invalidate all feed variations
+    await invalidateCache('combinedFeed:firstPage:limit:10');
+
     return successResponse(res, post, 'Post created successfully', 201);
   })
 ];
 
 // Get posts by user
+// Get posts by user with caching
 const getPostsByUser = [
   ...postValidation.getPostsByUser,
   asyncHandler(async (req, res) => {
@@ -71,9 +79,19 @@ const getPostsByUser = [
     }
 
     const { userId } = req.params;
-    const posts = await Post.find({ user: userId })
-      .populate('user', 'firstName lastName profilePicture')
-      .sort({ createdAt: -1 });
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const cacheKey = `userPosts:${userId}:page:${page}:limit:${limit}`;
+
+    const posts = await getOrSetCache(cacheKey, async () => {
+      return await Post.find({ user: userId })
+        .populate('user', 'firstName lastName profilePicture')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit);
+    }, 1800); // Cache for 30 minutes
 
     if (!posts || posts.length === 0) {
       return errorResponse(res, 'No posts found for this user', 404);
@@ -84,6 +102,7 @@ const getPostsByUser = [
 ];
 
 // Get post by ID
+// Get post by ID with caching
 const getPostById = [
   ...postValidation.getPostById,
   asyncHandler(async (req, res) => {
@@ -93,16 +112,19 @@ const getPostById = [
     }
 
     const { postId } = req.params;
-    const post = await Post.findById(postId)
-      .populate('user', 'firstName lastName profilePicture')
-      .populate({
-        path: 'comments.user',
-        select: 'firstName lastName profilePicture',
-      })
-      .populate({
-        path: 'comments.replies.user',
-        select: 'firstName lastName profilePicture',
-      });
+
+    const post = await getOrSetCache(`post:${postId}`, async () => {
+      return await Post.findById(postId)
+        .populate('user', 'firstName lastName profilePicture')
+        .populate({
+          path: 'comments.user',
+          select: 'firstName lastName profilePicture',
+        })
+        .populate({
+          path: 'comments.replies.user',
+          select: 'firstName lastName profilePicture',
+        });
+    }, 3600); // Cache for 1 hour
 
     if (!post) {
       return errorResponse(res, 'Post not found', 404);
@@ -111,7 +133,6 @@ const getPostById = [
     return successResponse(res, post, 'Post fetched successfully');
   })
 ];
-
 // Get all posts
 const getAllPosts = asyncHandler(async (req, res) => {
   const posts = await Post.find({ isHidden: false })
@@ -151,8 +172,10 @@ const toggleLike = [
     }
 
     await post.save();
-    return successResponse(res, 
-      { likesCount: post.likes.length, likes: post.likes }, 
+    await invalidateCache(`post:${postId}`);
+    await invalidateCache(`postLikes:${postId}`);
+    return successResponse(res,
+      { likesCount: post.likes.length, likes: post.likes },
       isLiked ? 'Like removed' : 'Post liked'
     );
   })
@@ -194,7 +217,7 @@ const deletePost = [
               Bucket: process.env.AWS_BUCKET_NAME,
               Key: key
             };
-            
+
             await s3Client.send(new DeleteObjectCommand(deleteParams));
             console.log(`Successfully deleted file from S3: ${key}`);
           }
@@ -203,13 +226,17 @@ const deletePost = [
           // Continue with post deletion even if S3 deletion fails
         }
       });
-      
+
       await Promise.all(deletePromises);
     }
 
     user.posts = user.posts.filter((id) => id.toString() !== postId.toString());
     await user.save();
     await post.deleteOne();
+    await invalidateCache(`post:${postId}`);
+    await invalidatePattern(`userPosts:${userId}:*`);
+    await invalidateCache('combinedFeed:*');
+    await invalidateCache('combinedFeed:firstPage:limit:10');
 
     return successResponse(res, {}, 'Post deleted successfully');
   })
@@ -239,7 +266,7 @@ const editPost = [
     }
 
     post.caption = caption;
-    
+
     if (req.body.replaceMedia === 'true' && post.media && post.media.length > 0) {
       const deletePromises = post.media.map(async (mediaItem) => {
         try {
@@ -249,7 +276,7 @@ const editPost = [
               Bucket: process.env.AWS_BUCKET_NAME,
               Key: key
             };
-            
+
             await s3Client.send(new DeleteObjectCommand(deleteParams));
             console.log(`Successfully deleted file from S3: ${key}`);
           }
@@ -257,11 +284,11 @@ const editPost = [
           console.error(`Error deleting file from S3: ${mediaItem.url}`, error);
         }
       });
-      
+
       await Promise.all(deletePromises);
       post.media = [];
     }
-    
+
     if (req.files) {
       if (req.files.image) {
         req.files.image.forEach(file => {
@@ -282,6 +309,11 @@ const editPost = [
     }
     await post.save();
 
+    await invalidateCache('combinedFeed:firstPage:limit:10');
+    await invalidateCache(`post:${postId}`);
+    await invalidatePattern(`userPosts:${userId}:*`);
+    await invalidateCache('combinedFeed:*');
+
     return successResponse(res, post, 'Post updated successfully', 200);
   })
 ];
@@ -297,7 +329,7 @@ const addComment = [
 
     const { postId, commentText } = req.body;
     const userId = req.user._id;
-    
+
     const post = await Post.findById(postId);
     if (!post) {
       return errorResponse(res, 'Post not found', 404);
@@ -310,6 +342,8 @@ const addComment = [
 
     post.comments.push(comment);
     await post.save();
+    await invalidateCache(`post:${postId}`);
+    await invalidateCache(`postComments:${postId}`);
     await post.populate('comments.user', 'firstName lastName profilePicture');
 
     // Create notification for the post owner if the commenter is not the owner
@@ -338,7 +372,7 @@ const addReply = [
 
     const { commentId, replyText } = req.body;
     const userId = req.user._id;
-    
+
     const post = await Post.findOne({ 'comments._id': commentId });
     if (!post) {
       return errorResponse(res, 'Post or comment not found', 404);
@@ -357,6 +391,8 @@ const addReply = [
 
     comment.replies.push(newReply);
     await post.save();
+    await invalidateCache(`post:${postId}`);
+    await invalidateCache(`postComments:${postId}`);
     await post.populate('comments.replies.user', 'firstName lastName profilePicture');
 
     // Create notification for the comment owner if the replier is not the owner
@@ -426,7 +462,7 @@ const deleteMediaItem = asyncHandler(async (req, res) => {
         Bucket: process.env.AWS_BUCKET_NAME,
         Key: key
       };
-      
+
       await s3Client.send(new DeleteObjectCommand(deleteParams));
       console.log(`Successfully deleted file from S3: ${key}`);
     }
@@ -487,14 +523,14 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
-    
+
     // Import all required post models
     const SanghPost = require('../../models/SanghModels/sanghPostModel');
     const PanchPost = require('../../models/SanghModels/panchPostModel');
     const VyaparPost = require('../../models/VyaparModels/vyaparPostModel');
     const TirthPost = require('../../models/TirthModels/tirthPostModel');
     const SadhuPost = require('../../models/SadhuModels/sadhuPostModel');
-    
+
     // Get all posts from different models with Promise.all for parallel execution
     const [userPosts, sanghPosts, panchPosts, vyaparPosts, tirthPosts, sadhuPosts] = await Promise.all([
       // Regular user posts
@@ -503,7 +539,7 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
         .sort('-createdAt')
         .select('caption media user likes comments createdAt')
         .lean(),
-      
+
       // Sangh posts
       SanghPost.find({ isHidden: false })
         .populate('sanghId', 'name level location')
@@ -511,7 +547,7 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
         .sort('-createdAt')
         .select('caption media sanghId postedByUserId postedByRole likes comments createdAt')
         .lean(),
-      
+
       // Panch posts
       PanchPost.find({ isHidden: false })
         .populate('panchId', 'accessId')
@@ -519,7 +555,7 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
         .sort('-createdAt')
         .select('caption media panchId sanghId postedByMemberId postedByName likes comments createdAt')
         .lean(),
-        
+
       // Vyapar posts
       VyaparPost.find({ isHidden: false })
         .populate('vyaparId', 'name businessType')
@@ -527,7 +563,7 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
         .sort('-createdAt')
         .select('caption media vyaparId postedByUserId likes comments createdAt')
         .lean(),
-        
+
       // Tirth posts
       TirthPost.find({ isHidden: false })
         .populate('tirthId', 'name location')
@@ -535,7 +571,7 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
         .sort('-createdAt')
         .select('caption media tirthId postedByUserId likes comments createdAt')
         .lean(),
-        
+
       // Sadhu posts
       SadhuPost.find({ isHidden: false })
         .populate('sadhuId', 'sadhuName uploadImage')
@@ -544,7 +580,7 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
         .select('caption media sadhuId postedByUserId likes comments createdAt')
         .lean()
     ]);
-    
+
     // Add post type for frontend differentiation
     const postsWithTypes = [
       ...userPosts.map(post => ({ ...post, postType: 'user' })),
@@ -554,18 +590,18 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
       ...tirthPosts.map(post => ({ ...post, postType: 'tirth' })),
       ...sadhuPosts.map(post => ({ ...post, postType: 'sadhu' }))
     ];
-    
+
     // Sort all posts by creation date
-    const sortedPosts = postsWithTypes.sort((a, b) => 
+    const sortedPosts = postsWithTypes.sort((a, b) =>
       new Date(b.createdAt) - new Date(a.createdAt)
     );
-    
+
     // Apply pagination after combining all posts
     const paginatedPosts = sortedPosts.slice(skip, skip + limit);
-    
+
     // Get total count for pagination
     const totalPosts = sortedPosts.length;
-    
+
     return successResponse(res, {
       posts: paginatedPosts,
       pagination: {
@@ -580,27 +616,26 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
   }
 });
 
-// Optimized version of combined feed with cursor-based pagination
+
+
 const getCombinedFeedOptimized = asyncHandler(async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 10;
-    const cursor = req.query.cursor; // timestamp of the oldest post in the previous batch
-  
-    
-    // Build query based on cursor
+  const limit = parseInt(req.query.limit) || 10;
+  const cursor = req.query.cursor;
+
+  const cacheKey = cursor
+    ? `combinedFeed:cursor:${cursor}:limit:${limit}`
+    : `combinedFeed:firstPage:limit:${limit}`;
+
+  const result = await getOrSetCache(cacheKey, async () => {
     const cursorQuery = cursor ? { createdAt: { $lt: new Date(cursor) } } : {};
-    
-    // Get posts from each model with the cursor filter
+
     const [userPosts, sanghPosts, panchPosts, vyaparPosts, tirthPosts, sadhuPosts] = await Promise.all([
-      // Regular user posts
       Post.find({ ...cursorQuery, isHidden: false })
         .populate('user', 'firstName lastName profilePicture')
         .sort('-createdAt')
         .select('caption media user likes comments createdAt')
         .limit(limit)
         .lean(),
-      
-      // Sangh posts
       SanghPost.find({ ...cursorQuery, isHidden: false })
         .populate('sanghId', 'name level location')
         .populate('postedByUserId', 'firstName lastName fullName profilePicture')
@@ -608,8 +643,6 @@ const getCombinedFeedOptimized = asyncHandler(async (req, res) => {
         .select('caption media sanghId postedByUserId postedByRole likes comments createdAt')
         .limit(limit)
         .lean(),
-      
-      // Panch posts
       PanchPost.find({ ...cursorQuery, isHidden: false })
         .populate('panchId', 'accessId')
         .populate('sanghId', 'name level location')
@@ -617,8 +650,6 @@ const getCombinedFeedOptimized = asyncHandler(async (req, res) => {
         .select('caption media panchId sanghId postedByMemberId postedByName likes comments createdAt')
         .limit(limit)
         .lean(),
-        
-      // Vyapar posts
       VyaparPost.find({ ...cursorQuery, isHidden: false })
         .populate('vyaparId', 'name businessType')
         .populate('postedByUserId', 'firstName lastName fullName profilePicture')
@@ -626,8 +657,6 @@ const getCombinedFeedOptimized = asyncHandler(async (req, res) => {
         .select('caption media vyaparId postedByUserId likes comments createdAt')
         .limit(limit)
         .lean(),
-        
-      // Tirth posts
       TirthPost.find({ ...cursorQuery, isHidden: false })
         .populate('tirthId', 'name location')
         .populate('postedByUserId', 'firstName lastName fullName profilePicture')
@@ -635,18 +664,15 @@ const getCombinedFeedOptimized = asyncHandler(async (req, res) => {
         .select('caption media tirthId postedByUserId likes comments createdAt')
         .limit(limit)
         .lean(),
-        
-      // Sadhu posts
       SadhuPost.find({ ...cursorQuery, isHidden: false })
         .populate('sadhuId', 'sadhuName uploadImage')
         .populate('postedByUserId', 'firstName lastName fullName profilePicture')
         .sort('-createdAt')
         .select('caption media sadhuId postedByUserId likes comments createdAt')
         .limit(limit)
-        .lean()
+        .lean(),
     ]);
-    
-    // Add post type for frontend differentiation
+
     const postsWithTypes = [
       ...userPosts.map(post => ({ ...post, postType: 'user' })),
       ...sanghPosts.map(post => ({ ...post, postType: 'sangh' })),
@@ -655,32 +681,27 @@ const getCombinedFeedOptimized = asyncHandler(async (req, res) => {
       ...tirthPosts.map(post => ({ ...post, postType: 'tirth' })),
       ...sadhuPosts.map(post => ({ ...post, postType: 'sadhu' }))
     ];
-    
-    // Sort all posts by creation date
-    const sortedPosts = postsWithTypes.sort((a, b) => 
-      new Date(b.createdAt) - new Date(a.createdAt)
-    ).slice(0, limit);
-    
-    // Get the next cursor (timestamp of the oldest post)
-    const nextCursor = sortedPosts.length > 0 
-      ? sortedPosts[sortedPosts.length - 1].createdAt.toISOString() 
+
+    const sortedPosts = postsWithTypes
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, limit);
+
+    const nextCursor = sortedPosts.length > 0
+      ? sortedPosts[sortedPosts.length - 1].createdAt.toISOString()
       : null;
-    
-    // Check if there are more posts
-    const hasMore = sortedPosts.length === limit;
-    
-    return successResponse(res, {
+
+    return {
       posts: sortedPosts,
       pagination: {
         nextCursor,
-        hasMore
+        hasMore: sortedPosts.length === limit
       }
-    }, 'Combined feed retrieved successfully');
-  } catch (error) {
-    console.error('Error in getCombinedFeedOptimized:', error);
-    return errorResponse(res, 'Error retrieving combined feed', 500, error.message);
-  }
+    };
+  }, 180); // Cache for 3 minutes
+
+  return successResponse(res, result, 'Combined feed retrieved successfully');
 });
+
 
 module.exports = {
   createPost,

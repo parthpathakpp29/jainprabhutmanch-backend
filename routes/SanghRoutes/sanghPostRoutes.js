@@ -4,6 +4,7 @@ const {
   createSanghPost, 
   getSanghPosts, 
   getAllSanghPosts,
+  getSanghPostById, // Add this import
   toggleLikeSanghPost,
   addCommentToSanghPost,
   deleteSanghPost,
@@ -12,7 +13,7 @@ const {
   getRepliesForSanghPost,
   deleteMediaItemFromSanghPost,
   hideSanghPost,
-  unhideSanghPost
+  unhideSanghPost,
 } = require('../../controllers/SanghControllers/sanghPostController');
 const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const { canPostAsSangh } = require('../../middlewares/sanghPermissions');
@@ -48,6 +49,16 @@ router.get(
   '/posts/feed',
   getAllSanghPosts
 );
+
+// Get single Sangh post by ID (public)
+router.get(
+  '/posts/:postId',
+  [
+    param('postId').isMongoId().withMessage('Invalid post ID')
+  ],
+  getSanghPostById
+);
+
 
 // Like/unlike a Sangh post
 router.put(

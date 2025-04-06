@@ -13,7 +13,8 @@ const {
     getReplies,
     deleteReply,
     deleteMedia,
-    toggleHidePost
+    toggleHidePost,
+    getAllVyaparPosts
 } = require('../../controllers/VyaparControllers/vyaparPostController');
 const { postMediaUpload } = require('../../middlewares/uploadMiddleware');
 const { authMiddleware } = require('../../middlewares/authMiddlewares');
@@ -21,6 +22,8 @@ const { canManageBusinessPost } = require('../../middlewares/vyaparAuthMiddlewar
 const { body, param } = require('express-validator');
 
 // Public routes
+router.get('/all-posts', getAllVyaparPosts); // NEW route for combined vyapar posts
+
 router.get('/:vyaparId/posts', getPosts);
 router.get('/posts/:postId', getPostById);
 

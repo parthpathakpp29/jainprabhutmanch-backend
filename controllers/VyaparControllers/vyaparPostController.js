@@ -4,6 +4,7 @@ const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
 const { createLikeNotification, createCommentNotification, createReplyNotification } = require('../../utils/notificationUtils');
+const { getOrSetCache,invalidateCache  } = require('../../utils/cache');
 
 // Create new Vyapar post
 const createPost = async (req, res) => {
@@ -41,6 +42,9 @@ const createPost = async (req, res) => {
 
         const post = new JainVyaparPost(postData);
         await post.save();
+        await invalidateCache(`vyaparPosts:${req.params.vyaparId}:page:1:limit:10`);
+        await invalidatePattern(`vyaparPosts:${vyaparId}:*`);
+        await invalidateCache(`vyapar:${vyaparId}:stats`);
 
         return successResponse(res, {
             message: 'Post created successfully',
@@ -80,65 +84,66 @@ const createPost = async (req, res) => {
 
 // Get all posts for a vyapar
 const getPosts = async (req, res) => {
-    try {
-        const { vyaparId } = req.params;
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const skip = (page - 1) * limit;
+    const { vyaparId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    
+    const cacheKey = `vyaparPosts:${vyaparId}:page:${page}:limit:${limit}`;
+  
+    const result = await getOrSetCache(cacheKey, async () => {
+      const skip = (page - 1) * limit;
+      const [posts, total] = await Promise.all([
+        JainVyaparPost.find({ vyaparId, isHidden: false })
+          .populate('vyaparId', 'name businessType')
+          .populate('postedByUserId', 'firstName lastName profilePicture')
+          .sort('-createdAt')
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        JainVyaparPost.countDocuments({ vyaparId, isHidden: false })
+      ]);
+  
+      return {
+        posts,
+        pagination: {
+          total,
+          page,
+          pages: Math.ceil(total / limit)
+        }
+      };
+    }, 300); // Cache for 5 minutes
+  
+    return successResponse(res, result, 'Vyapar posts fetched successfully');
+  };
+  
 
-        const posts = await JainVyaparPost.find({ 
-            vyaparId,
-            isHidden: false
-        })
-        .populate('vyaparId', 'name businessType')
-        .populate('postedByUserId', 'firstName lastName profilePicture')
-        .sort('-createdAt')
-        .skip(skip)
-        .limit(limit);
-        
-        const total = await JainVyaparPost.countDocuments({ 
-            vyaparId,
-            isHidden: false
-        });
-
-        return successResponse(res, {
-            posts,
-            pagination: {
-                page,
-                limit,
-                total,
-                pages: Math.ceil(total / limit)
-            }
-        });
-    } catch (error) {
-        return errorResponse(res, 'Failed to fetch posts', 500, error.message);
-    }
-};
 
 // Get a single post by ID
 const getPostById = async (req, res) => {
     try {
-        const { postId } = req.params;
-        
-        const post = await JainVyaparPost.findOne({
-            _id: postId,
-            isHidden: false
+      const { postId } = req.params;
+      
+      const post = await getOrSetCache(`vyaparPost:${postId}`, async () => {
+        return await JainVyaparPost.findOne({
+          _id: postId,
+          isHidden: false
         })
         .populate('vyaparId', 'name businessType')
         .populate('postedByUserId', 'firstName lastName profilePicture')
         .populate('likes', 'firstName lastName profilePicture')
         .populate('comments.user', 'firstName lastName profilePicture')
         .populate('comments.replies.user', 'firstName lastName profilePicture');
-
-        if (!post) {
-            return errorResponse(res, 'Post not found', 404);
-        }
-
-        return successResponse(res, { post });
+      }, 3600); // Cache for 1 hour
+  
+      if (!post) {
+        return errorResponse(res, 'Post not found', 404);
+      }
+  
+      return successResponse(res, { post });
     } catch (error) {
-        return errorResponse(res, 'Failed to fetch post', 500, error.message);
+      return errorResponse(res, 'Failed to fetch post', 500, error.message);
     }
-};
+  };
 
 // Update a post
 const updatePost = async (req, res) => {
@@ -161,7 +166,9 @@ const updatePost = async (req, res) => {
         if (caption) post.caption = caption;
         
         await post.save();
-
+        await invalidateCache(`vyaparPosts:${req.params.vyaparId}:page:1:limit:10`);
+        await invalidateCache(`vyaparPost:${postId}`);
+        await invalidatePattern(`vyaparPosts:${post.vyaparId}:*`);
         return successResponse(res, {
             message: 'Post updated successfully',
             post
@@ -189,6 +196,9 @@ const deletePost = async (req, res) => {
         
         post.isHidden = true;
         await post.save();
+        await invalidateCache(`vyaparPosts:${req.params.vyaparId}:page:1:limit:10`);
+        await invalidateCache(`vyaparPost:${postId}`);
+        await invalidatePattern(`vyaparPosts:${post.vyaparId}:*`);
 
         return successResponse(res, {
             message: 'Post deleted successfully'
@@ -213,6 +223,8 @@ const toggleLike = async (req, res) => {
         
         const result = post.toggleLike(userId);
         await post.save();
+        await invalidateCache(`vyaparPost:${postId}`);
+await invalidateCache(`vyaparPostLikes:${postId}`);
         
         // Create notification if the post was liked (not unliked)
         if (result.isLiked && post.postedByUserId._id.toString() !== userId.toString()) {
@@ -251,6 +263,8 @@ const addComment = async (req, res) => {
         
         const comment = post.addComment(userId, text);
         await post.save();
+        await invalidateCache(`vyaparPost:${postId}`);
+await invalidateCache(`vyaparPostComments:${postId}`);
         
         // Populate user info for the new comment
         await post.populate('comments.user', 'firstName lastName profilePicture');
@@ -337,6 +351,8 @@ const addReply = async (req, res) => {
         });
         
         await post.save();
+        await invalidateCache(`vyaparPost:${postId}`);
+await invalidateCache(`vyaparPostComments:${postId}`);
         
         // Populate user info for the new reply
         await post.populate('comments.replies.user', 'firstName lastName profilePicture');
@@ -506,6 +522,42 @@ const toggleHidePost = async (req, res) => {
     }
 };
 
+const getAllVyaparPosts = async (req, res) => {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const skip = (page - 1) * limit;
+  
+      const cacheKey = `allVyaparPosts:page:${page}:limit:${limit}`;
+  
+      const result = await getOrSetCache(cacheKey, async () => {
+        const posts = await JainVyaparPost.find({ isHidden: false })
+          .populate('vyaparId', 'name businessType')
+          .populate('postedByUserId', 'firstName lastName profilePicture')
+          .sort('-createdAt')
+          .skip(skip)
+          .limit(limit)
+          .lean();
+  
+        const total = await JainVyaparPost.countDocuments({ isHidden: false });
+  
+        return {
+          posts,
+          pagination: {
+            total,
+            page,
+            pages: Math.ceil(total / limit)
+          }
+        };
+      }, 180);
+  
+      return successResponse(res, result, 'All Vyapar posts fetched');
+    } catch (error) {
+      return errorResponse(res, 'Failed to fetch Vyapar posts', 500, error.message);
+    }
+  };
+  
+
 module.exports = {
     createPost,
     getPosts,
@@ -519,5 +571,6 @@ module.exports = {
     getReplies,
     deleteReply,
     deleteMedia,
-    toggleHidePost
+    toggleHidePost,
+    getAllVyaparPosts
 };

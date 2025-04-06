@@ -4,6 +4,8 @@ const Conversation = require('../../models/SocialMediaModels/conversationModel')
 const { getIo } = require('../../websocket/socket');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
+const { getOrSetCache,invalidateCache } = require('../../utils/cache');
+
 
 exports.createMessage = async (req, res) => {
   try {
@@ -82,6 +84,8 @@ exports.createMessage = async (req, res) => {
         profilePicture: senderUser.profilePicture
       }
     });
+    await invalidateCache(`messages:${sender}:${receiver}:page:1:limit:20`);
+
 
     return successResponse(res, {
       ...newMessage.toObject(),
@@ -151,34 +155,43 @@ exports.deleteMessageById = async (req, res) => {
 exports.getMessages = async (req, res) => {
   try {
     const { sender, receiver, page = 1, limit = 20 } = req.query;
-    
+
     if (!sender || !receiver) {
       return errorResponse(res, 'Sender and receiver are required', 400);
     }
 
     const skip = (page - 1) * limit;
+    const cacheKey = `messages:${sender}:${receiver}:page:${page}:limit:${limit}`;
 
-    const messages = await Message.find({
-      $or: [
-        { sender, receiver },
-        { sender: receiver, receiver: sender },
-      ],
-    })
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(parseInt(limit))
-    .populate('sender', 'fullName profilePicture')
-    .populate('receiver', 'fullName profilePicture');
+    const result = await getOrSetCache(cacheKey, async () => {
+      const messages = await Message.find({
+        $or: [
+          { sender, receiver },
+          { sender: receiver, receiver: sender },
+        ],
+      })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .populate('sender', 'fullName profilePicture')
+        .populate('receiver', 'fullName profilePicture');
 
-    // Messages are automatically decrypted via schema middleware
+      // Mark messages as read
+      await Message.updateMany(
+        { sender: receiver, receiver: sender, isRead: false },
+        { isRead: true }
+      );
 
-    // Mark messages as read
-    await Message.updateMany(
-      { sender: receiver, receiver: sender, isRead: false },
-      { isRead: true }
-    );
+      return {
+        messages: messages.reverse(), // chronological order
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit)
+        }
+      };
+    }, 180); // TTL 3 mins
 
-    // Emit read receipt
+    // Emit read receipt (optional, keep if needed)
     const io = getIo();
     io.to(receiver.toString()).emit('messagesRead', { sender, receiver });
 
@@ -186,21 +199,17 @@ exports.getMessages = async (req, res) => {
     const senderStatus = getUserStatus(sender);
     const receiverStatus = getUserStatus(receiver);
 
-    return successResponse(res, {
-      messages: messages.reverse(),
-      participants: {
-        [sender]: senderStatus,
-        [receiver]: receiverStatus
-      },
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit)
-      }
-    }, 'Messages retrieved successfully', 200);
+    result.participants = {
+      [sender]: senderStatus,
+      [receiver]: receiverStatus
+    };
+
+    return successResponse(res, result, 'Messages retrieved successfully', 200);
   } catch (error) {
     return errorResponse(res, 'Error retrieving messages', 500, error);
   }
 };
+
 
 // Get all messages for a user
 exports.getAllMessages = async (req, res) => {

@@ -46,7 +46,7 @@ router.post('/create',
     check('caption').optional().isLength({ max: 2000 }).withMessage('Caption cannot exceed 2000 characters')
   ], 
   createPost
-);
+); 
 
 router.get('/', getAllPosts);
 
@@ -108,4 +108,4 @@ router.put('/:postId/unhide', [
   param('postId').isMongoId().withMessage('Invalid post ID')
 ], unhidePost);
 
-module.exports = router;
+module.exports = router; 

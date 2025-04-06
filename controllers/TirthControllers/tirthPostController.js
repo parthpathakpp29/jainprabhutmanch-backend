@@ -3,6 +3,7 @@ const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
 const { createLikeNotification, createCommentNotification, createReplyNotification } = require('../../utils/notificationUtils');
+const { getOrSetCache,invalidateCache  } = require('../../utils/cache');
 
 // Create new Tirth post
 const createPost = async (req, res) => {
@@ -42,6 +43,7 @@ const createPost = async (req, res) => {
         await post.save();
 
         await post.populate('postedByUserId', 'firstName lastName profilePicture');
+        await invalidateCache(`tirthPosts:${req.params.tirthId}:page:1:limit:10`);
 
         return successResponse(res, {
             message: 'Post created successfully',
@@ -80,36 +82,40 @@ const createPost = async (req, res) => {
 };
 
 // Get Tirth posts
+
+
 const getTirthPosts = async (req, res) => {
-    try {
-        const { tirthId } = req.params;
-        const { page = 1, limit = 10 } = req.query;
+  const { tirthId } = req.params;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
 
-        const posts = await TirthPost.find({
-            tirthId,
-            isHidden: false
-        })
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .populate('postedByUserId', 'firstName lastName profilePicture')
-        .populate('comments.user', 'firstName lastName profilePicture');
+  const cacheKey = `tirthPosts:${tirthId}:page:${page}:limit:${limit}`;
 
-        const total = await TirthPost.countDocuments({
-            tirthId,
-            isHidden: false
-        });
+  const result = await getOrSetCache(cacheKey, async () => {
+    const posts = await TirthPost.find({ tirthId, isHidden: false })
+      .populate('tirthId', 'name location')
+      .populate('postedByUserId', 'firstName lastName profilePicture')
+      .sort('-createdAt')
+      .skip(skip)
+      .limit(limit)
+      .lean();
 
-        return successResponse(res, {
-            posts,
-            totalPosts: total,
-            currentPage: page,
-            totalPages: Math.ceil(total / limit)
-        });
-    } catch (error) {
-        return errorResponse(res, error.message, 500);
-    }
+    const total = await TirthPost.countDocuments({ tirthId, isHidden: false });
+
+    return {
+      posts,
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit)
+      }
+    };
+  }, 180);
+
+  return successResponse(res, result, 'Tirth posts fetched successfully');
 };
+
 
 // Get a single Tirth post
 const getPost = async (req, res) => {
@@ -203,6 +209,8 @@ const updatePost = async (req, res) => {
                  .populate('comments.user', 'firstName lastName profilePicture')
                  .populate('comments.replies.user', 'firstName lastName profilePicture');
 
+                 await invalidateCache(`tirthPosts:${req.params.tirthId}:page:1:limit:10`);
+
         return successResponse(res, {
             message: 'Post updated successfully',
             post
@@ -255,6 +263,7 @@ const deletePost = async (req, res) => {
         // Set post to hidden instead of deleting media files
         post.isHidden = true;
         await post.save();
+        await invalidateCache(`tirthPosts:${req.params.tirthId}:page:1:limit:10`);
 
         return successResponse(res, {
             message: 'Post deleted successfully'
@@ -572,6 +581,41 @@ const toggleHidePost = async (req, res) => {
         return errorResponse(res, 'Failed to update post visibility', 500, error.message);
     }
 };
+const getAllTirthPosts = async (req, res) => {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const skip = (page - 1) * limit;
+  
+      const cacheKey = `allTirthPosts:page:${page}:limit:${limit}`;
+  
+      const result = await getOrSetCache(cacheKey, async () => {
+        const posts = await TirthPost.find({ isHidden: false })
+          .populate('tirthId', 'name location')
+          .populate('postedByUserId', 'firstName lastName profilePicture')
+          .populate('comments.user', 'firstName lastName profilePicture')
+          .sort('-createdAt')
+          .skip(skip)
+          .limit(limit)
+          .lean();
+  
+        const total = await TirthPost.countDocuments({ isHidden: false });
+  
+        return {
+          posts,
+          pagination: {
+            total,
+            page,
+            pages: Math.ceil(total / limit)
+          }
+        };
+      }, 180); // Cache for 3 minutes
+  
+      return successResponse(res, result, 'All Tirth posts fetched successfully');
+    } catch (error) {
+      return errorResponse(res, 'Failed to fetch Tirth posts', 500, error.message);
+    }
+  };
 
 module.exports = {
     createPost,
@@ -586,5 +630,6 @@ module.exports = {
     getReplies,
     deleteReply,
     deleteMedia,
-    toggleHidePost
+    toggleHidePost,
+    getAllTirthPosts
 };

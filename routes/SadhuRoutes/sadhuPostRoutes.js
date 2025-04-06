@@ -13,14 +13,16 @@ const {
     getSadhuReplies,
     deleteSadhuReply,
     deleteSadhuMedia,
-    toggleHideSadhuPost
+    toggleHideSadhuPost,
+    getAllSadhuPosts
 } = require('../../controllers/SadhuControllers/sadhuPostController');
 const { authMiddleware, verifySadhuRole } = require('../../middlewares/authMiddlewares');
 const { canManageSadhuPost } = require('../../middlewares/sadhuAuthMiddleware');
 const { postMediaUpload } = require('../../middlewares/uploadMiddleware');
 const { body, param } = require('express-validator');
-// Public routes
 
+// Public routes
+router.get('/all-posts', getAllSadhuPosts); // New route to get posts from all Sadhus
 router.get('/:sadhuId/posts', getSadhuPosts);
 router.get('/posts/:postId', getSadhuPostById);
 

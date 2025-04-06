@@ -5,6 +5,7 @@ const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
 const { createLikeNotification, createCommentNotification, createReplyNotification } = require('../../utils/notificationUtils');
+const { getOrSetCache,invalidateCache  } = require('../../utils/cache');
 
 // Create a post as Sangh
 const createSanghPost = asyncHandler(async (req, res) => {
@@ -49,6 +50,11 @@ const createSanghPost = asyncHandler(async (req, res) => {
     const populatedPost = await SanghPost.findById(post._id)
       .populate('sanghId', 'name level location')
       .populate('postedByUserId', 'firstName lastName fullName profilePicture');
+      await invalidateCache(`sanghPosts:page:1:limit:10`);
+      await invalidatePattern(`sanghPosts:${sanghId}:*`);
+await invalidatePattern('allSanghPosts:*');
+await invalidateCache(`sangh:${sanghId}:stats`);
+
     
     return successResponse(res, populatedPost, 'Post created successfully', 201);
   } catch (error) {
@@ -80,72 +86,78 @@ const getSanghPosts = asyncHandler(async (req, res) => {
     const { sanghId } = req.params;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
     
-    // Run queries in parallel using Promise.all
-    const [posts, total] = await Promise.all([
-      SanghPost.find({ 
-        sanghId,
-        isHidden: false 
-      })
-        .select('caption media postedByUserId postedByRole createdAt likes comments') // Select only needed fields
-        .populate('sanghId', 'name level location')
-        .populate('postedByUserId', 'firstName lastName fullName profilePicture')
-        .populate('comments.user', 'firstName lastName fullName profilePicture')
-        .sort('-createdAt')
-        .skip(skip)
-        .limit(limit)
-        .lean(), // Convert to plain JS objects for better performance
+    const cacheKey = `sanghPosts:${sanghId}:page:${page}:limit:${limit}`;
 
-      SanghPost.countDocuments({ 
-        sanghId,
-        isHidden: false 
-      })
-    ]);
-    
-    return successResponse(res, {
-      posts,
-      pagination: {
-        total,
-        page,
-        pages: Math.ceil(total / limit)
-      }
-    }, 'Sangh posts retrieved successfully');
+    const result = await getOrSetCache(cacheKey, async () => {
+      const skip = (page - 1) * limit;
+      const [posts, total] = await Promise.all([
+        SanghPost.find({ 
+          sanghId,
+          isHidden: false 
+        })
+          .select('caption media postedByUserId postedByRole createdAt likes comments')
+          .populate('sanghId', 'name level location')
+          .populate('postedByUserId', 'firstName lastName fullName profilePicture')
+          .populate('comments.user', 'firstName lastName fullName profilePicture')
+          .sort('-createdAt')
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        SanghPost.countDocuments({ 
+          sanghId,
+          isHidden: false 
+        })
+      ]);
+      
+      return {
+        posts,
+        pagination: {
+          total,
+          page,
+          pages: Math.ceil(total / limit)
+        }
+      };
+    }, 300); // Cache for 5 minutes
+
+    return successResponse(res, result, 'Sangh posts retrieved successfully');
   } catch (error) {
     return errorResponse(res, error.message, 500);
   }
 });
 
-// Get all Sangh posts for social feed
-const getAllSanghPosts = asyncHandler(async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-    
-    // Get all visible Sangh posts
+
+
+const getAllSanghPosts = async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const cacheKey = `sanghPosts:page:${page}:limit:${limit}`;
+
+  const result = await getOrSetCache(cacheKey, async () => {
     const posts = await SanghPost.find({ isHidden: false })
       .populate('sanghId', 'name level location')
       .populate('postedByUserId', 'firstName lastName fullName profilePicture')
-      .populate('comments.user', 'firstName lastName fullName profilePicture')
       .sort('-createdAt')
       .skip(skip)
-      .limit(limit);
-    
+      .limit(limit)
+      .lean();
+
     const total = await SanghPost.countDocuments({ isHidden: false });
-    
-    return successResponse(res, {
+
+    return {
       posts,
       pagination: {
         total,
         page,
         pages: Math.ceil(total / limit)
       }
-    }, 'All Sangh posts retrieved successfully');
-  } catch (error) {
-    return errorResponse(res, error.message, 500);
-  }
-});
+    };
+  }, 180);
+
+  return successResponse(res, result, 'Sangh posts retrieved successfully');
+};
 
 // Toggle like on a Sangh post
 const toggleLikeSanghPost = asyncHandler(async (req, res) => {
@@ -162,6 +174,8 @@ const toggleLikeSanghPost = asyncHandler(async (req, res) => {
     
     const result = post.toggleLike(userId);
     await post.save();
+    await invalidateCache(`sanghPost:${postId}`);
+await invalidateCache(`sanghPostLikes:${postId}`);
     
     // Create notification if the post was liked (not unliked)
     if (result.isLiked && post.postedByUserId._id.toString() !== userId.toString()) {
@@ -200,6 +214,8 @@ const addCommentToSanghPost = asyncHandler(async (req, res) => {
     
     const comment = post.addComment(userId, text);
     await post.save();
+    await invalidateCache(`sanghPost:${postId}`);
+await invalidateCache(`sanghPostComments:${postId}`);
     
     // Populate user info for the new comment
     await post.populate('comments.user', 'firstName lastName profilePicture');
@@ -253,6 +269,8 @@ const addReplyToComment = asyncHandler(async (req, res) => {
     });
     
     await post.save();
+    await invalidateCache(`sanghPost:${postId}`);
+await invalidateCache(`sanghPostComments:${postId}`);
     
     // Populate user info for the new reply
     await post.populate('comments.replies.user', 'firstName lastName profilePicture');
@@ -319,7 +337,11 @@ const deleteSanghPost = asyncHandler(async (req, res) => {
     }
     
     await post.deleteOne();
-    
+    await invalidateCache(`sanghPosts:page:1:limit:10`);
+    await invalidateCache(`sanghPost:${postId}`);
+await invalidatePattern(`sanghPosts:${post.sanghId}:*`);
+await invalidatePattern('allSanghPosts:*');
+
     return successResponse(res, null, 'Post deleted successfully');
   } catch (error) {
     return errorResponse(res, error.message, 500);
@@ -380,6 +402,11 @@ const updateSanghPost = asyncHandler(async (req, res) => {
     const updatedPost = await SanghPost.findById(postId)
       .populate('sanghId', 'name level location')
       .populate('postedByUserId', 'firstName lastName fullName profilePicture');
+      await invalidateCache(`sanghPosts:page:1:limit:10`);
+      await invalidateCache(`sanghPost:${postId}`);
+await invalidatePattern(`sanghPosts:${post.sanghId}:*`);
+await invalidatePattern('allSanghPosts:*');
+
 
     return successResponse(res, updatedPost, 'Post updated successfully');
   } catch (error) {
@@ -475,6 +502,32 @@ const deleteMediaItemFromSanghPost = asyncHandler(async (req, res) => {
   }
 });
 
+const getSanghPostById = asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    
+    const post = await getOrSetCache(`sanghPost:${postId}`, async () => {
+      return await SanghPost.findOne({
+        _id: postId,
+        isHidden: false
+      })
+      .populate('sanghId', 'name level location')
+      .populate('postedByUserId', 'firstName lastName fullName profilePicture')
+      .populate('likes', 'firstName lastName profilePicture')
+      .populate('comments.user', 'firstName lastName fullName profilePicture')
+      .populate('comments.replies.user', 'firstName lastName fullName profilePicture');
+    }, 3600); // Cache for 1 hour
+
+    if (!post) {
+      return errorResponse(res, 'Post not found', 404);
+    }
+
+    return successResponse(res, { post });
+  } catch (error) {
+    return errorResponse(res, error.message, 500);
+  }
+});
+
 // Hide a Sangh post
 const hideSanghPost = asyncHandler(async (req, res) => {
   try {
@@ -537,5 +590,6 @@ module.exports = {
   getRepliesForSanghPost,
   deleteMediaItemFromSanghPost,
   hideSanghPost,
-  unhideSanghPost
+  unhideSanghPost,
+  getSanghPostById, 
 };

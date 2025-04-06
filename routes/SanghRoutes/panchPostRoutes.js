@@ -13,7 +13,8 @@ const {
   getRepliesForPanchPost,
   deleteMediaItemFromPanchPost,
   hidePanchPost,
-  unhidePanchPost
+  unhidePanchPost,
+  getPanchPostById
 } = require('../../controllers/SanghControllers/panchPostController');
 const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const { isPanchMember } = require('../../middlewares/sanghPermissions');
@@ -48,6 +49,14 @@ router.get(
 router.get(
   '/posts/feed',
   getAllPanchPosts
+);
+
+router.get(
+  '/posts/:postId',
+  [
+    param('postId').isMongoId().withMessage('Invalid post ID')
+  ],
+  getPanchPostById
 );
 
 // Like/unlike a Panch post
