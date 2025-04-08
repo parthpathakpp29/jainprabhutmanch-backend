@@ -168,7 +168,6 @@ const getAllPosts = async (req, res) => {
   }
 };
 
-
 // Toggle like on a post
 const toggleLike = [
   asyncHandler(async (req, res) => {
