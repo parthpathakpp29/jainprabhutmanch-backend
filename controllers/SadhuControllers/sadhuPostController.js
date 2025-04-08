@@ -4,13 +4,15 @@ const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
 const upload = require('../../middlewares/uploadMiddleware');
 const { createLikeNotification, createCommentNotification, createReplyNotification } = require('../../utils/notificationUtils');
-const { getOrSetCache,invalidateCache  } = require('../../utils/cache');
+const { getOrSetCache, invalidateCache, invalidatePattern } = require('../../utils/cache');
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
+
 
 // Create post
 const createSadhuPost = async (req, res) => {
     try {
         const { caption } = req.body;
-        
+
         const postData = {
             sadhuId: req.sadhu._id,
             caption,
@@ -20,23 +22,25 @@ const createSadhuPost = async (req, res) => {
         // Handle media uploads
         if (req.files) {
             const media = [];
-            
+
             // Handle images
             if (req.files.image) {
                 media.push(...req.files.image.map(file => ({
                     type: 'image',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
+
                 })));
             }
-            
+
             // Handle videos
             if (req.files.video) {
                 media.push(...req.files.video.map(file => ({
                     type: 'video',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
+
                 })));
             }
-            
+
             postData.media = media;
         }
 
@@ -55,7 +59,7 @@ const createSadhuPost = async (req, res) => {
         if (req.files) {
             const deletePromises = [];
             if (req.files.image) {
-                deletePromises.push(...req.files.image.map(file => 
+                deletePromises.push(...req.files.image.map(file =>
                     s3Client.send(new DeleteObjectCommand({
                         Bucket: process.env.AWS_BUCKET_NAME,
                         Key: extractS3KeyFromUrl(file.location)
@@ -63,21 +67,21 @@ const createSadhuPost = async (req, res) => {
                 ));
             }
             if (req.files.video) {
-                deletePromises.push(...req.files.video.map(file => 
+                deletePromises.push(...req.files.video.map(file =>
                     s3Client.send(new DeleteObjectCommand({
                         Bucket: process.env.AWS_BUCKET_NAME,
                         Key: extractS3KeyFromUrl(file.location)
                     }))
                 ));
             }
-            
+
             try {
                 await Promise.all(deletePromises);
             } catch (deleteError) {
                 console.error('Error deleting files:', deleteError);
             }
         }
-        
+
         return errorResponse(res, 'Failed to create post', 500, error.message);
     }
 };
@@ -86,35 +90,44 @@ const createSadhuPost = async (req, res) => {
 
 
 const getSadhuPosts = async (req, res) => {
-  const { sadhuId } = req.params;
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const skip = (page - 1) * limit;
+    const { sadhuId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
-  const cacheKey = `sadhuPosts:${sadhuId}:page:${page}:limit:${limit}`;
+    const cacheKey = `sadhuPosts:${sadhuId}:page:${page}:limit:${limit}`;
 
-  const result = await getOrSetCache(cacheKey, async () => {
-    const posts = await SadhuPost.find({ sadhuId, isHidden: false })
-      .populate('sadhuId', 'sadhuName uploadImage')
-      .populate('postedByUserId', 'firstName lastName profilePicture')
-      .populate('comments.user', 'firstName lastName profilePicture')
-      .sort('-createdAt')
-      .skip(skip)
-      .limit(limit);
+    const result = await getOrSetCache(cacheKey, async () => {
+        const posts = await SadhuPost.find({ sadhuId, isHidden: false })
+            .populate('sadhuId', 'sadhuName uploadImage')
+            .populate('postedByUserId', 'firstName lastName profilePicture')
+            .populate('comments.user', 'firstName lastName profilePicture')
+            .sort('-createdAt')
+            .skip(skip)
+            .limit(limit);
 
-    const total = await SadhuPost.countDocuments({ sadhuId, isHidden: false });
+        const total = await SadhuPost.countDocuments({ sadhuId, isHidden: false });
 
-    return {
-      posts,
-      pagination: {
-        total,
-        page,
-        pages: Math.ceil(total / limit)
-      }
-    };
-  }, 180);
+        return {
+            posts,
+            pagination: {
+                total,
+                page,
+                pages: Math.ceil(total / limit)
+            }
+        };
+    }, 180);
 
-  return successResponse(res, result, 'Sadhu posts fetched successfully');
+    result.posts = result.posts.map(post => ({
+        ...post.toObject?.() ?? post,
+        media: post.media.map(m => ({
+          ...m,
+          url: convertS3UrlToCDN(m.url)
+        }))
+      }));
+      
+
+    return successResponse(res, result, 'Sadhu posts fetched successfully');
 };
 
 // Toggle like on post
@@ -122,32 +135,32 @@ const toggleLikeSadhuPost = async (req, res) => {
     try {
         const { postId } = req.params;
         const userId = req.user._id;
-        
+
         const post = await SadhuPost.findById(postId)
-          .populate('postedByUserId', 'firstName lastName');
-        
+            .populate('postedByUserId', 'firstName lastName');
+
         if (!post) {
-          return errorResponse(res, 'Post not found', 404);
+            return errorResponse(res, 'Post not found', 404);
         }
-        
+
         const result = post.toggleLike(userId);
         await post.save();
-        
+
         // Create notification if the post was liked (not unliked)
         if (result.isLiked && post.postedByUserId._id.toString() !== userId.toString()) {
-          await createLikeNotification({
-            senderId: userId,
-            receiverId: post.postedByUserId._id,
-            entityId: postId,
-            entityType: 'sadhuPost',
-            senderName: `${req.user.firstName} ${req.user.lastName}`
-          });
+            await createLikeNotification({
+                senderId: userId,
+                receiverId: post.postedByUserId._id,
+                entityId: postId,
+                entityType: 'sadhuPost',
+                senderName: `${req.user.firstName} ${req.user.lastName}`
+            });
         }
-        
+
         return successResponse(res, result, `Post ${result.isLiked ? 'liked' : 'unliked'} successfully`);
-      } catch (error) {
+    } catch (error) {
         return errorResponse(res, error.message, 500);
-      }
+    }
 };
 
 // Comment on post
@@ -156,50 +169,50 @@ const commentOnSadhuPost = async (req, res) => {
         const { postId } = req.params;
         const { text } = req.body;
         const userId = req.user._id;
-        
+
         if (!text) {
-          return errorResponse(res, 'Comment text is required', 400);
+            return errorResponse(res, 'Comment text is required', 400);
         }
-        
+
         const post = await SadhuPost.findById(postId)
-          .populate('postedByUserId', 'firstName lastName');
-        
+            .populate('postedByUserId', 'firstName lastName');
+
         if (!post) {
-          return errorResponse(res, 'Post not found', 404);
+            return errorResponse(res, 'Post not found', 404);
         }
-        
+
         const comment = post.addComment(userId, text);
         await post.save();
-        
+
         // Populate user info for the new comment
         await post.populate('comments.user', 'firstName lastName profilePicture');
         const newComment = post.comments.id(comment._id);
-        
+
         // Create notification for post owner (if commenter is not the owner)
         if (post.postedByUserId._id.toString() !== userId.toString()) {
-          await createCommentNotification({
-            senderId: userId,
-            receiverId: post.postedByUserId._id,
-            entityId: postId,
-            entityType: 'sadhuPost',
-            senderName: `${req.user.firstName} ${req.user.lastName}`
-          });
+            await createCommentNotification({
+                senderId: userId,
+                receiverId: post.postedByUserId._id,
+                entityId: postId,
+                entityType: 'sadhuPost',
+                senderName: `${req.user.firstName} ${req.user.lastName}`
+            });
         }
-        
+
         return successResponse(res, {
-          comment: newComment,
-          commentCount: post.comments.length
+            comment: newComment,
+            commentCount: post.comments.length
         }, 'Comment added successfully');
-      } catch (error) {
+    } catch (error) {
         return errorResponse(res, error.message, 500);
-      }
+    }
 };
 
 // Delete post
 const deleteSadhuPost = async (req, res) => {
     try {
         const { postId } = req.params;
-        const post = await SadhuPost.findOne({ 
+        const post = await SadhuPost.findOne({
             _id: postId,
             sadhuId: req.sadhu._id
         });
@@ -239,7 +252,7 @@ const deleteSadhuComment = async (req, res) => {
             },
             { new: true }
         )
-        .populate('comments.user', 'firstName lastName profilePicture');
+            .populate('comments.user', 'firstName lastName profilePicture');
 
         if (!post) {
             return errorResponse(res, 'Comment not found or unauthorized', 404);
@@ -258,20 +271,25 @@ const deleteSadhuComment = async (req, res) => {
 const getSadhuPostById = async (req, res) => {
     try {
         const { postId } = req.params;
-        
-        const post = await SadhuPost.findOne({ 
-            _id: postId, 
-            isHidden: false 
+
+        const post = await SadhuPost.findOne({
+            _id: postId,
+            isHidden: false
         })
-        .populate('sadhuId', 'sadhuName uploadImage')
-        .populate('postedByUserId', 'firstName lastName profilePicture')
-        .populate('comments.user', 'firstName lastName profilePicture')
-        .populate('comments.replies.user', 'firstName lastName profilePicture');
-            
+            .populate('sadhuId', 'sadhuName uploadImage')
+            .populate('postedByUserId', 'firstName lastName profilePicture')
+            .populate('comments.user', 'firstName lastName profilePicture')
+            .populate('comments.replies.user', 'firstName lastName profilePicture');
+
         if (!post) {
             return errorResponse(res, 'Post not found', 404);
         }
-        
+        post.media = post.media.map(m => ({
+            ...m,
+            url: convertS3UrlToCDN(m.url)
+          }));
+          
+
         return successResponse(res, post);
     } catch (error) {
         return errorResponse(res, error.message, 500);
@@ -283,22 +301,22 @@ const updateSadhuPost = async (req, res) => {
     try {
         const { postId } = req.params;
         const { caption } = req.body;
-        
-        const post = await SadhuPost.findOne({ 
+
+        const post = await SadhuPost.findOne({
             _id: postId,
             sadhuId: req.sadhu._id,
             isHidden: false
         });
-        
+
         if (!post) {
             return errorResponse(res, 'Post not found or unauthorized', 404);
         }
-        
+
         // Update caption if provided
         if (caption) {
             post.caption = caption;
         }
-        
+
         // If replaceMedia flag is set, delete existing media from S3
         if (req.body.replaceMedia === 'true' && post.media && post.media.length > 0) {
             const deletePromises = post.media.map(async (mediaItem) => {
@@ -314,36 +332,38 @@ const updateSadhuPost = async (req, res) => {
                     console.error(`Error deleting file from S3: ${mediaItem.url}`, error);
                 }
             });
-            
+
             await Promise.all(deletePromises);
             post.media = [];
         }
-        
+
         // Handle new media uploads if any
         if (req.files) {
             if (req.files.image) {
                 post.media.push(...req.files.image.map(file => ({
                     type: 'image',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
+
                 })));
             }
-            
+
             if (req.files.video) {
                 post.media.push(...req.files.video.map(file => ({
                     type: 'video',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
+
                 })));
             }
         }
-        
+
         await post.save();
-        
+
         // Populate the updated post
         await post.populate('sadhuId', 'sadhuName uploadImage')
-                 .populate('postedByUserId', 'firstName lastName profilePicture')
-                 .populate('comments.user', 'firstName lastName profilePicture')
-                 .populate('comments.replies.user', 'firstName lastName profilePicture');
-        
+            .populate('postedByUserId', 'firstName lastName profilePicture')
+            .populate('comments.user', 'firstName lastName profilePicture')
+            .populate('comments.replies.user', 'firstName lastName profilePicture');
+
         return successResponse(res, {
             message: 'Post updated successfully',
             post
@@ -353,7 +373,7 @@ const updateSadhuPost = async (req, res) => {
         if (req.files) {
             const deletePromises = [];
             if (req.files.image) {
-                deletePromises.push(...req.files.image.map(file => 
+                deletePromises.push(...req.files.image.map(file =>
                     s3Client.send(new DeleteObjectCommand({
                         Bucket: process.env.AWS_BUCKET_NAME,
                         Key: extractS3KeyFromUrl(file.location)
@@ -361,7 +381,7 @@ const updateSadhuPost = async (req, res) => {
                 ));
             }
             if (req.files.video) {
-                deletePromises.push(...req.files.video.map(file => 
+                deletePromises.push(...req.files.video.map(file =>
                     s3Client.send(new DeleteObjectCommand({
                         Bucket: process.env.AWS_BUCKET_NAME,
                         Key: extractS3KeyFromUrl(file.location)
@@ -380,53 +400,53 @@ const addSadhuReply = async (req, res) => {
         const { postId, commentId } = req.params;
         const { text } = req.body;
         const userId = req.user._id;
-        
+
         if (!text) {
-          return errorResponse(res, 'Reply text is required', 400);
+            return errorResponse(res, 'Reply text is required', 400);
         }
-        
+
         const post = await SadhuPost.findById(postId);
         if (!post) {
-          return errorResponse(res, 'Post not found', 404);
+            return errorResponse(res, 'Post not found', 404);
         }
-        
+
         const comment = post.comments.id(commentId);
         if (!comment) {
-          return errorResponse(res, 'Comment not found', 404);
+            return errorResponse(res, 'Comment not found', 404);
         }
-        
+
         comment.replies.push({
-          user: userId,
-          text,
-          createdAt: new Date()
+            user: userId,
+            text,
+            createdAt: new Date()
         });
-        
+
         await post.save();
-        
+
         // Populate user info for the new reply
         await post.populate('comments.replies.user', 'firstName lastName profilePicture');
         const updatedComment = post.comments.id(commentId);
         const newReply = updatedComment.replies[updatedComment.replies.length - 1];
-        
+
         // Create notification for comment owner (if replier is not the comment owner)
         if (comment.user.toString() !== userId.toString()) {
-          await createReplyNotification({
-            senderId: userId,
-            receiverId: comment.user,
-            entityId: commentId,
-            postId: postId,
-            entityType: 'sadhuPost',
-            senderName: `${req.user.firstName} ${req.user.lastName}`
-          });
+            await createReplyNotification({
+                senderId: userId,
+                receiverId: comment.user,
+                entityId: commentId,
+                postId: postId,
+                entityType: 'sadhuPost',
+                senderName: `${req.user.firstName} ${req.user.lastName}`
+            });
         }
-        
+
         return successResponse(res, {
-          reply: newReply,
-          replyCount: updatedComment.replies.length
+            reply: newReply,
+            replyCount: updatedComment.replies.length
         }, 'Reply added successfully');
-      } catch (error) {
+    } catch (error) {
         return errorResponse(res, error.message, 500);
-      }
+    }
 };
 
 // Get replies for a comment
@@ -446,7 +466,7 @@ const getSadhuReplies = async (req, res) => {
 
         // Populate user info for replies
         await post.populate('comments.replies.user', 'firstName lastName profilePicture');
-        
+
         // Get the updated comment with populated replies
         const updatedComment = post.comments.id(commentId);
 
@@ -477,7 +497,7 @@ const deleteSadhuReply = async (req, res) => {
             },
             { new: true }
         )
-        .populate('comments.replies.user', 'firstName lastName profilePicture');
+            .populate('comments.replies.user', 'firstName lastName profilePicture');
 
         if (!post) {
             return errorResponse(res, 'Reply not found or unauthorized', 404);
@@ -553,7 +573,7 @@ const toggleHideSadhuPost = async (req, res) => {
             _id: postId,
             sadhuId: req.sadhu._id
         });
-        
+
         if (!post) {
             return errorResponse(res, 'Post not found or unauthorized', 404);
         }
@@ -572,39 +592,48 @@ const toggleHideSadhuPost = async (req, res) => {
 
 const getAllSadhuPosts = async (req, res) => {
     try {
-      const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 10;
-      const skip = (page - 1) * limit;
-  
-      const cacheKey = `allSadhuPosts:page:${page}:limit:${limit}`;
-  
-      const result = await getOrSetCache(cacheKey, async () => {
-        const posts = await SadhuPost.find({ isHidden: false })
-          .populate('sadhuId', 'sadhuName uploadImage')
-          .populate('postedByUserId', 'firstName lastName profilePicture')
-          .populate('comments.user', 'firstName lastName profilePicture')
-          .sort('-createdAt')
-          .skip(skip)
-          .limit(limit)
-          .lean();
-  
-        const total = await SadhuPost.countDocuments({ isHidden: false });
-  
-        return {
-          posts,
-          pagination: {
-            total,
-            page,
-            pages: Math.ceil(total / limit)
-          }
-        };
-      }, 180); // 3-minute cache
-  
-      return successResponse(res, result, 'All Sadhu posts fetched');
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        const cacheKey = `allSadhuPosts:page:${page}:limit:${limit}`;
+
+        const result = await getOrSetCache(cacheKey, async () => {
+            const posts = await SadhuPost.find({ isHidden: false })
+                .populate('sadhuId', 'sadhuName uploadImage')
+                .populate('postedByUserId', 'firstName lastName profilePicture')
+                .populate('comments.user', 'firstName lastName profilePicture')
+                .sort('-createdAt')
+                .skip(skip)
+                .limit(limit)
+                .lean();
+
+            const total = await SadhuPost.countDocuments({ isHidden: false });
+
+            return {
+                posts,
+                pagination: {
+                    total,
+                    page,
+                    pages: Math.ceil(total / limit)
+                }
+            };
+        }, 180); // 3-minute cache
+
+        result.posts = result.posts.map(post => ({
+            ...post,
+            media: post.media.map(m => ({
+              ...m,
+              url: convertS3UrlToCDN(m.url)
+            }))
+          }));
+          
+
+        return successResponse(res, result, 'All Sadhu posts fetched');
     } catch (error) {
-      return errorResponse(res, 'Failed to fetch Sadhu posts', 500, error.message);
+        return errorResponse(res, 'Failed to fetch Sadhu posts', 500, error.message);
     }
-  };
+};
 
 module.exports = {
     createSadhuPost,
@@ -620,5 +649,5 @@ module.exports = {
     deleteSadhuReply,
     deleteSadhuMedia,
     toggleHideSadhuPost,
-    getAllSadhuPosts 
+    getAllSadhuPosts
 };

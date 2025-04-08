@@ -4,8 +4,10 @@ const Conversation = require('../../models/SocialMediaModels/conversationModel')
 const { getIo } = require('../../websocket/socket');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
-const { getOrSetCache,invalidateCache } = require('../../utils/cache');
+const { getOrSetCache,invalidateCache,invalidatePattern } = require('../../utils/cache');
 const { getUserStatus } = require('../../websocket/socket');
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
+
 
 
 exports.createMessage = async (req, res) => {
@@ -58,10 +60,11 @@ exports.createMessage = async (req, res) => {
       message: message || 'Image', // Default text for image-only messages
       attachments: req.file ? [{
         type: 'image',
-        url: req.file.location,
+        url: convertS3UrlToCDN(req.file.location),
         name: req.file.originalname,
         size: req.file.size
       }] : [],
+      
       createdAt: new Date()
     };
 
@@ -117,7 +120,6 @@ await invalidateCache(`conversation:${receiver}:${sender}`);
   }
 };
 
-// Update delete message function to handle image deletion
 exports.deleteMessageById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -137,20 +139,22 @@ exports.deleteMessageById = async (req, res) => {
     if (message.attachments && message.attachments.length > 0) {
       for (const attachment of message.attachments) {
         if (attachment.url) {
-          const key = attachment.url.split('.com/')[1];
-          await s3Client.send(new DeleteObjectCommand({
-            Bucket: process.env.AWS_BUCKET_NAME,
-            Key: key
-          }));
+          const key = extractS3KeyFromUrl(attachment.url); // Use the utility function
+          if (key) {
+            await s3Client.send(new DeleteObjectCommand({
+              Bucket: process.env.AWS_BUCKET_NAME,
+              Key: key
+            }));
+          }
         }
       }
     }
 
     await message.deleteOne();
     const sender = message.sender.toString();
-const receiver = message.receiver.toString();
-await invalidatePattern(`messages:${sender}:${receiver}:page:*`);
-await invalidatePattern(`messages:${receiver}:${sender}:page:*`);
+    const receiver = message.receiver.toString();
+    await invalidatePattern(`messages:${sender}:${receiver}:page:*`);
+    await invalidatePattern(`messages:${receiver}:${sender}:page:*`);
 
     // Notify other user about message deletion
     const io = getIo();
@@ -163,7 +167,6 @@ await invalidatePattern(`messages:${receiver}:${sender}:page:*`);
     return errorResponse(res, 'Error deleting message', 500, error.message);
   }
 };
-
 
 exports.getMessages = async (req, res) => {
   try {

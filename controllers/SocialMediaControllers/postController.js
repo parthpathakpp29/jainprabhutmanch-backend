@@ -16,7 +16,9 @@ const PanchPost = require('../../models/SanghModels/panchPostModel');
 const VyaparPost = require('../../models/VyaparModels/vyaparPostModel');
 const TirthPost = require('../../models/TirthModels/tirthPostModel');
 const SadhuPost = require('../../models/SadhuModels/sadhuPostModel');
-const { getOrSetCache, invalidateCache } = require('../../utils/cache');
+const { getOrSetCache, invalidateCache, invalidatePattern } = require('../../utils/cache');
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
+
 
 // Create a post
 // postController.js
@@ -41,7 +43,7 @@ const createPost = [
       if (req.files.image) {
         req.files.image.forEach(file => {
           media.push({
-            url: file.location,
+            url: convertS3UrlToCDN(file.location),
             type: 'image'
           });
         });
@@ -49,12 +51,13 @@ const createPost = [
       if (req.files.video) {
         req.files.video.forEach(file => {
           media.push({
-            url: file.location,
+            url: convertS3UrlToCDN(file.location),
             type: 'video'
           });
         });
       }
     }
+
 
     const post = await Post.create({ user: userId, caption, media });
     user.posts.push(post._id);
@@ -97,6 +100,15 @@ const getPostsByUser = [
       return errorResponse(res, 'No posts found for this user', 404);
     }
 
+    const cdnPosts = posts.map(post => ({
+      ...post.toObject(),
+      media: post.media.map(m => ({
+        ...m,
+        url: convertS3UrlToCDN(m.url)
+      }))
+    }));
+    
+
     return successResponse(res, posts, 'Posts fetched successfully');
   })
 ];
@@ -129,6 +141,11 @@ const getPostById = [
     if (!post) {
       return errorResponse(res, 'Post not found', 404);
     }
+    post.media = post.media.map(m => ({
+      ...m,
+      url: convertS3UrlToCDN(m.url)
+    }));
+    
 
     return successResponse(res, post, 'Post fetched successfully');
   })
@@ -162,7 +179,16 @@ const getAllPosts = async (req, res) => {
       };
     }, 180); // Cache for 3 minutes
 
+    result.posts = result.posts.map(post => ({
+      ...post,
+      media: post.media.map(m => ({
+        ...m,
+        url: convertS3UrlToCDN(m.url)
+      }))
+    }));
+    
     return successResponse(res, result, 'All user posts fetched');
+    
   } catch (error) {
     return errorResponse(res, 'Failed to fetch posts', 500, error.message);
   }
@@ -319,17 +345,19 @@ const editPost = [
       if (req.files.image) {
         req.files.image.forEach(file => {
           post.media.push({
-            url: file.location,
+            url: convertS3UrlToCDN(file.location),
             type: 'image'
           });
+
         });
       }
       if (req.files.video) {
         req.files.video.forEach(file => {
           post.media.push({
-            url: file.location,
+            url: convertS3UrlToCDN(file.location),
             type: 'video'
           });
+
         });
       }
     }
@@ -543,23 +571,31 @@ const unhidePost = asyncHandler(async (req, res) => {
   return successResponse(res, post, 'Post unhidden successfully');
 });
 
-// Get combined feed of user posts and Sangh posts
+// 📁 Place this helper above `getCombinedFeed`
+const applyCDNToPosts = (posts, type) =>
+  posts.map(post => ({
+    ...post,
+    postType: type,
+    media: post.media.map(m => ({
+      ...m,
+      url: convertS3UrlToCDN(m.url)
+    }))
+  }));
+
+// ✅ Updated getCombinedFeed with CDN support
 const getCombinedFeed = asyncHandler(async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    // Get all posts from different models with Promise.all for parallel execution
     const [userPosts, sanghPosts, panchPosts, vyaparPosts, tirthPosts, sadhuPosts] = await Promise.all([
-      // Regular user posts
       Post.find({ isHidden: false })
         .populate('user', 'firstName lastName profilePicture')
         .sort('-createdAt')
         .select('caption media user likes comments createdAt')
         .lean(),
 
-      // Sangh posts
       SanghPost.find({ isHidden: false })
         .populate('sanghId', 'name level location')
         .populate('postedByUserId', 'firstName lastName fullName profilePicture')
@@ -567,7 +603,6 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
         .select('caption media sanghId postedByUserId postedByRole likes comments createdAt')
         .lean(),
 
-      // Panch posts
       PanchPost.find({ isHidden: false })
         .populate('panchId', 'accessId')
         .populate('sanghId', 'name level location')
@@ -575,7 +610,6 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
         .select('caption media panchId sanghId postedByMemberId postedByName likes comments createdAt')
         .lean(),
 
-      // Vyapar posts
       VyaparPost.find({ isHidden: false })
         .populate('vyaparId', 'name businessType')
         .populate('postedByUserId', 'firstName lastName fullName profilePicture')
@@ -583,7 +617,6 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
         .select('caption media vyaparId postedByUserId likes comments createdAt')
         .lean(),
 
-      // Tirth posts
       TirthPost.find({ isHidden: false })
         .populate('tirthId', 'name location')
         .populate('postedByUserId', 'firstName lastName fullName profilePicture')
@@ -591,7 +624,6 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
         .select('caption media tirthId postedByUserId likes comments createdAt')
         .lean(),
 
-      // Sadhu posts
       SadhuPost.find({ isHidden: false })
         .populate('sadhuId', 'sadhuName uploadImage')
         .populate('postedByUserId', 'firstName lastName fullName profilePicture')
@@ -600,25 +632,20 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
         .lean()
     ]);
 
-    // Add post type for frontend differentiation
     const postsWithTypes = [
-      ...userPosts.map(post => ({ ...post, postType: 'user' })),
-      ...sanghPosts.map(post => ({ ...post, postType: 'sangh' })),
-      ...panchPosts.map(post => ({ ...post, postType: 'panch' })),
-      ...vyaparPosts.map(post => ({ ...post, postType: 'vyapar' })),
-      ...tirthPosts.map(post => ({ ...post, postType: 'tirth' })),
-      ...sadhuPosts.map(post => ({ ...post, postType: 'sadhu' }))
+      ...applyCDNToPosts(userPosts, 'user'),
+      ...applyCDNToPosts(sanghPosts, 'sangh'),
+      ...applyCDNToPosts(panchPosts, 'panch'),
+      ...applyCDNToPosts(vyaparPosts, 'vyapar'),
+      ...applyCDNToPosts(tirthPosts, 'tirth'),
+      ...applyCDNToPosts(sadhuPosts, 'sadhu')
     ];
 
-    // Sort all posts by creation date
     const sortedPosts = postsWithTypes.sort((a, b) =>
       new Date(b.createdAt) - new Date(a.createdAt)
     );
 
-    // Apply pagination after combining all posts
     const paginatedPosts = sortedPosts.slice(skip, skip + limit);
-
-    // Get total count for pagination
     const totalPosts = sortedPosts.length;
 
     return successResponse(res, {
@@ -634,7 +661,6 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
     return errorResponse(res, 'Error retrieving combined feed', 500, error.message);
   }
 });
-
 
 
 const getCombinedFeedOptimized = asyncHandler(async (req, res) => {
@@ -693,12 +719,12 @@ const getCombinedFeedOptimized = asyncHandler(async (req, res) => {
     ]);
 
     const postsWithTypes = [
-      ...userPosts.map(post => ({ ...post, postType: 'user' })),
-      ...sanghPosts.map(post => ({ ...post, postType: 'sangh' })),
-      ...panchPosts.map(post => ({ ...post, postType: 'panch' })),
-      ...vyaparPosts.map(post => ({ ...post, postType: 'vyapar' })),
-      ...tirthPosts.map(post => ({ ...post, postType: 'tirth' })),
-      ...sadhuPosts.map(post => ({ ...post, postType: 'sadhu' }))
+      ...applyCDNToPosts(userPosts, 'user'),
+      ...applyCDNToPosts(sanghPosts, 'sangh'),
+      ...applyCDNToPosts(panchPosts, 'panch'),
+      ...applyCDNToPosts(vyaparPosts, 'vyapar'),
+      ...applyCDNToPosts(tirthPosts, 'tirth'),
+      ...applyCDNToPosts(sadhuPosts, 'sadhu')
     ];
 
     const sortedPosts = postsWithTypes
@@ -716,7 +742,7 @@ const getCombinedFeedOptimized = asyncHandler(async (req, res) => {
         hasMore: sortedPosts.length === limit
       }
     };
-  }, 180); // Cache for 3 minutes
+  }, 180);
 
   return successResponse(res, result, 'Combined feed retrieved successfully');
 });

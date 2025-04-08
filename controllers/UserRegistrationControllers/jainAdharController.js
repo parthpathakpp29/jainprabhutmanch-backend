@@ -5,6 +5,8 @@ const asyncHandler = require('express-async-handler');
 const { validationResult } = require('express-validator');
 const { jainAadharValidation } = require('../../validators/validations');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
+
 
 // Check if user has existing application
 const checkExistingApplication = asyncHandler(async (req, res, next) => {
@@ -37,10 +39,10 @@ const createJainAadhar = asyncHandler(async (req, res) => {
             return errorResponse(res, 'All required documents (PAN Card, Aadhar Card, and Profile Photo) must be uploaded', 400);
         }
 
-        // Get file URLs
-        const panCardUrl = panCard[0].location;
-        const aadharCardUrl = aadharCard[0].location;
-        const userProfileUrl = userProfile[0].location;
+        const panCardUrl = convertS3UrlToCDN(panCard[0].location);
+        const aadharCardUrl = convertS3UrlToCDN(aadharCard[0].location);
+        const userProfileUrl = convertS3UrlToCDN(userProfile[0].location);
+        
 
         // Determine application level based on location
         // Check for area first - if area is provided, route to area level
@@ -668,6 +670,11 @@ const getApplicationDetails = asyncHandler(async (req, res) => {
     if (!application) {
       return errorResponse(res, 'Application not found', 404);
     }
+    // Convert document URLs to CDN
+application.PanCard = convertS3UrlToCDN(application.PanCard);
+application.AadharCard = convertS3UrlToCDN(application.AadharCard);
+application.userProfile = convertS3UrlToCDN(application.userProfile);
+
 
     return successResponse(res, application, 'Application details retrieved successfully');
   } catch (error) {

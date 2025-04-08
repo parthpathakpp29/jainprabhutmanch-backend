@@ -25,14 +25,6 @@ const allowedTypes = new Set([
 //   });
 // };
 
-// ✅ Support for CDN URL rewriting
-const convertToCdnUrl = (url) => {
-  const endpoint = process.env.DO_ENDPOINT;
-  const cdn = process.env.DO_CDN_URL;
-  if (!cdn || !url.startsWith(endpoint)) return url;
-  return url.replace(endpoint, cdn);
-};
-
 const fileFilter = (req, file, cb) => {
   try {
     if (file.fieldname === 'profilePicture') {

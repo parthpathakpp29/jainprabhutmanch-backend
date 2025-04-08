@@ -5,7 +5,9 @@ const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
 const { createLikeNotification, createCommentNotification, createReplyNotification } = require('../../utils/notificationUtils');
-const { getOrSetCache,invalidateCache  } = require('../../utils/cache');
+const { getOrSetCache, invalidateCache,invalidatePattern } = require('../../utils/cache');
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
+
 
 // Create a post as Sangh
 const createSanghPost = asyncHandler(async (req, res) => {
@@ -24,9 +26,10 @@ const createSanghPost = asyncHandler(async (req, res) => {
     let mediaFiles = [];
     if (req.files && req.files.media) {
       mediaFiles = req.files.media.map(file => ({
-        url: file.location,
+        url: convertS3UrlToCDN(file.location),
         type: file.mimetype.startsWith('image/') ? 'image' : 'video'
       }));
+      
     }
     
     // Get sanghType from the Sangh
@@ -120,6 +123,15 @@ const getSanghPosts = asyncHandler(async (req, res) => {
       };
     }, 300); // Cache for 5 minutes
 
+    result.posts = result.posts.map(post => ({
+      ...post,
+      media: post.media.map(m => ({
+        ...m,
+        url: convertS3UrlToCDN(m.url)
+      }))
+    }));
+    
+
     return successResponse(res, result, 'Sangh posts retrieved successfully');
   } catch (error) {
     return errorResponse(res, error.message, 500);
@@ -155,6 +167,15 @@ const getAllSanghPosts = async (req, res) => {
       }
     };
   }, 180);
+
+  result.posts = result.posts.map(post => ({
+    ...post,
+    media: post.media.map(m => ({
+      ...m,
+      url: convertS3UrlToCDN(m.url)
+    }))
+  }));
+  
 
   return successResponse(res, result, 'Sangh posts retrieved successfully');
 };
@@ -389,9 +410,10 @@ const updateSanghPost = asyncHandler(async (req, res) => {
     // Add new media if provided
     if (req.files && req.files.media) {
       const newMedia = req.files.media.map(file => ({
-        url: file.location,
+        url: convertS3UrlToCDN(file.location),
         type: file.mimetype.startsWith('image/') ? 'image' : 'video'
       }));
+      
       post.media.push(...newMedia);
     }
 
@@ -521,6 +543,12 @@ const getSanghPostById = asyncHandler(async (req, res) => {
     if (!post) {
       return errorResponse(res, 'Post not found', 404);
     }
+
+    post.media = post.media.map(m => ({
+      ...m,
+      url: convertS3UrlToCDN(m.url)
+    }));
+    
 
     return successResponse(res, { post });
   } catch (error) {

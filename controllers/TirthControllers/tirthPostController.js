@@ -3,7 +3,9 @@ const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
 const { createLikeNotification, createCommentNotification, createReplyNotification } = require('../../utils/notificationUtils');
-const { getOrSetCache,invalidateCache  } = require('../../utils/cache');
+const { getOrSetCache, invalidateCache,invalidatePattern } = require('../../utils/cache');
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
+
 
 // Create new Tirth post
 const createPost = async (req, res) => {
@@ -19,7 +21,8 @@ const createPost = async (req, res) => {
             if (req.files.image) {
                 media.push(...req.files.image.map(file => ({
                     type: 'image',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
+
                 })));
             }
             
@@ -27,7 +30,8 @@ const createPost = async (req, res) => {
             if (req.files.video) {
                 media.push(...req.files.video.map(file => ({
                     type: 'video',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
+
                 })));
             }
         }
@@ -113,6 +117,15 @@ const getTirthPosts = async (req, res) => {
     };
   }, 180);
 
+  result.posts = result.posts.map(post => ({
+    ...post,
+    media: post.media.map(m => ({
+      ...m,
+      url: convertS3UrlToCDN(m.url)
+    }))
+  }));
+  
+
   return successResponse(res, result, 'Tirth posts fetched successfully');
 };
 
@@ -133,6 +146,12 @@ const getPost = async (req, res) => {
         if (!post) {
             return errorResponse(res, 'Post not found', 404);
         }
+        
+        post.media = post.media.map(m => ({
+            ...m,
+            url: convertS3UrlToCDN(m.url)
+          }));
+          
 
         return successResponse(res, post);
     } catch (error) {
@@ -190,13 +209,15 @@ const updatePost = async (req, res) => {
             if (req.files.image) {
                 post.media.push(...req.files.image.map(file => ({
                     type: 'image',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
+
                 })));
             }
             if (req.files.video) {
                 post.media.push(...req.files.video.map(file => ({
                     type: 'video',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
+
                 })));
             }
         }
@@ -610,6 +631,15 @@ const getAllTirthPosts = async (req, res) => {
           }
         };
       }, 180); // Cache for 3 minutes
+
+      result.posts = result.posts.map(post => ({
+        ...post,
+        media: post.media.map(m => ({
+          ...m,
+          url: convertS3UrlToCDN(m.url)
+        }))
+      }));
+      
   
       return successResponse(res, result, 'All Tirth posts fetched successfully');
     } catch (error) {

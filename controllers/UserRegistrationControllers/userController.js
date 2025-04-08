@@ -8,6 +8,8 @@ const { userValidation } = require('../../validators/validations');
 const { generateToken } = require('../../helpers/authHelpers');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../../services/nodemailerEmailService');
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
+
 
 const crypto = require('crypto');
 
@@ -506,7 +508,7 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
         let imageUrl = null;
 
         if (req.file) {
-            imageUrl = req.file.location; // S3 URL of the uploaded file
+            imageUrl = convertS3UrlToCDN(req.file.location); // ✅ Use CloudFront
         }
 
         const updateData = {
@@ -537,6 +539,7 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
         return errorResponse(res, 'Error processing profile picture', 500, error.message);
     }
 });
+
 
 // Skip profile picture upload
 const skipProfilePicture = asyncHandler(async (req, res) => {

@@ -9,6 +9,8 @@ const { getIo } = require('../../websocket/socket');
 const { validationResult } = require('express-validator');
 const { createLikeNotification, createCommentNotification, createReplyNotification } = require('../../utils/notificationUtils');
 const { getOrSetCache, invalidateCache } = require('../../utils/cache');
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
+
 
 // Create a post as Panch member
 const createPanchPost = asyncHandler(async (req, res) => {
@@ -27,9 +29,10 @@ const createPanchPost = asyncHandler(async (req, res) => {
     let mediaFiles = [];
     if (req.files && req.files.media) {
       mediaFiles = req.files.media.map(file => ({
-        url: file.location,
+        url: convertS3UrlToCDN(file.location),
         type: file.mimetype.startsWith('image/') ? 'image' : 'video'
       }));
+      
     }
 
     // Create the post
@@ -120,7 +123,16 @@ const getPanchPosts = asyncHandler(async (req, res) => {
           pages: Math.ceil(total / limit)
         }
       };
-    }, 300); // Cache for 5 minutes
+    }, 300); 
+    // Cache for 5 minutes
+    result.posts = result.posts.map(post => ({
+      ...post,
+      media: post.media.map(m => ({
+        ...m,
+        url: convertS3UrlToCDN(m.url)
+      }))
+    }));
+    
 
     return successResponse(res, result, 'Panch posts retrieved successfully');
   } catch (error) {
@@ -159,6 +171,15 @@ const getAllPanchPosts = asyncHandler(async (req, res) => {
         }
       };
     }, 300); // Cache for 5 minutes
+
+    result.posts = result.posts.map(post => ({
+      ...post,
+      media: post.media.map(m => ({
+        ...m,
+        url: convertS3UrlToCDN(m.url)
+      }))
+    }));
+    
 
     return successResponse(res, result, 'Panch posts retrieved successfully');
   } catch (error) {
@@ -341,9 +362,10 @@ const updatePanchPost = asyncHandler(async (req, res) => {
     // Add new media if provided
     if (req.files && req.files.media) {
       const newMedia = req.files.media.map(file => ({
-        url: file.location,
+        url: convertS3UrlToCDN(file.location),
         type: file.mimetype.startsWith('image/') ? 'image' : 'video'
       }));
+      
       post.media.push(...newMedia);
     }
 
@@ -558,6 +580,12 @@ const getPanchPostById = asyncHandler(async (req, res) => {
     if (!post) {
       return errorResponse(res, 'Post not found', 404);
     }
+
+    post.media = post.media.map(m => ({
+      ...m,
+      url: convertS3UrlToCDN(m.url)
+    }));
+    
 
     return successResponse(res, { post });
   } catch (error) {
