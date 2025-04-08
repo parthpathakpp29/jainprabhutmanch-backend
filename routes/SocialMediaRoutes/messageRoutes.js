@@ -5,7 +5,8 @@ const {
   getMessageById, 
   getMessages, 
   getUnreadMessagesCount, 
-  deleteMessageById
+  deleteMessageById,
+  getConversations
 } = require('../../controllers/SocialMediaControllers/messageController');
 const { authenticate } = require('../../middlewares/authMiddlewares');
 const upload = require('../../middlewares/uploadMiddleware');
@@ -82,6 +83,14 @@ router.delete('/:id',
     param('id').isMongoId().withMessage('Invalid message ID')
   ],
   deleteMessageById
+);
+
+// Get all conversations for a user
+router.get('/conversations/:userId', 
+  [
+    param('userId').isMongoId().withMessage('Invalid user ID')
+  ],
+  getConversations
 );
 
 module.exports = router;

@@ -5,6 +5,7 @@ const { getIo } = require('../../websocket/socket');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { getOrSetCache,invalidateCache } = require('../../utils/cache');
+const { getUserStatus } = require('../../websocket/socket');
 
 
 exports.createMessage = async (req, res) => {
@@ -33,10 +34,14 @@ exports.createMessage = async (req, res) => {
       return errorResponse(res, 'Sender or receiver not found', 400);
     }
 
+    const conversationCacheKey = `conversation:${sender}:${receiver}`;
     // Find or create conversation
-    let conversation = await Conversation.findOne({
-      participants: { $all: [sender, receiver] }
-    });
+    let conversation = await getOrSetCache(conversationCacheKey, async () => {
+      return await Conversation.findOne({
+        participants: { $all: [sender, receiver] }
+      });
+    }, 300);
+    
 
     if (!conversation) {
       conversation = new Conversation({
@@ -68,6 +73,9 @@ exports.createMessage = async (req, res) => {
     conversation.lastMessage = newMessage._id;
     await conversation.save();
 
+    await invalidateCache(`conversation:${sender}:${receiver}`);
+await invalidateCache(`conversation:${receiver}:${sender}`); 
+
     // Get decrypted message for socket emission
     const decryptedMessage = newMessage.decryptedMessage;
 
@@ -84,7 +92,8 @@ exports.createMessage = async (req, res) => {
         profilePicture: senderUser.profilePicture
       }
     });
-    await invalidateCache(`messages:${sender}:${receiver}:page:1:limit:20`);
+    await invalidatePattern(`messages:${sender}:${receiver}:page:*`);
+    await invalidatePattern(`messages:${receiver}:${sender}:page:*`); 
 
 
     return successResponse(res, {
@@ -138,6 +147,10 @@ exports.deleteMessageById = async (req, res) => {
     }
 
     await message.deleteOne();
+    const sender = message.sender.toString();
+const receiver = message.receiver.toString();
+await invalidatePattern(`messages:${sender}:${receiver}:page:*`);
+await invalidatePattern(`messages:${receiver}:${sender}:page:*`);
 
     // Notify other user about message deletion
     const io = getIo();
@@ -195,7 +208,7 @@ exports.getMessages = async (req, res) => {
     const io = getIo();
     io.to(receiver.toString()).emit('messagesRead', { sender, receiver });
 
-    const { getUserStatus } = require('../../websocket/socket');
+  
     const senderStatus = getUserStatus(sender);
     const receiverStatus = getUserStatus(receiver);
 
@@ -203,6 +216,7 @@ exports.getMessages = async (req, res) => {
       [sender]: senderStatus,
       [receiver]: receiverStatus
     };
+    await invalidateCache(`unreadCount:${sender}`);
 
     return successResponse(res, result, 'Messages retrieved successfully', 200);
   } catch (error) {
@@ -248,12 +262,37 @@ exports.getMessageById = async (req, res) => {
 exports.getUnreadMessagesCount = async (req, res) => {
   try {
     const { userId } = req.params;
-    const count = await Message.countDocuments({
-      receiver: userId,
-      isRead: false
-    });
+    const count = await getOrSetCache(`unreadCount:${userId}`, async () => {
+      return await Message.countDocuments({
+        receiver: userId,
+        isRead: false
+      });
+    }, 60);
     return successResponse(res, { unreadCount: count }, 'Unread count retrieved successfully', 200);
   } catch (error) {
     return errorResponse(res, 'Error getting unread count', 500, error);
+  }
+};
+
+// Add to messageController.js
+exports.getConversations = async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const cacheKey = `conversations:${userId}`;
+    
+    const conversations = await getOrSetCache(cacheKey, async () => {
+      return await Conversation.find({
+        participants: userId
+      })
+      .populate('participants', 'fullName profilePicture')
+      .sort({ updatedAt: -1 });
+    }, 60); // Cache for 1 minute
+    if (!conversations || conversations.length === 0) {
+      return errorResponse(res, 'No conversations found', 404);
+    }
+    
+    return successResponse(res, conversations, 'Conversations retrieved', 200);
+  } catch (error) {
+    return errorResponse(res, 'Error fetching conversations', 500, error);
   }
 };

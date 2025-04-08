@@ -134,13 +134,40 @@ const getPostById = [
   })
 ];
 // Get all posts
-const getAllPosts = asyncHandler(async (req, res) => {
-  const posts = await Post.find({ isHidden: false })
-    .populate('user', 'firstName lastName profilePicture')
-    .sort({ createdAt: -1 });
+const getAllPosts = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
-  return successResponse(res, posts, 'Posts fetched successfully');
-});
+    const cacheKey = `allUserPosts:page:${page}:limit:${limit}`;
+
+    const result = await getOrSetCache(cacheKey, async () => {
+      const posts = await Post.find({ isHidden: false })
+        .populate('user', 'firstName lastName profilePicture')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+      const total = await Post.countDocuments({ isHidden: false });
+
+      return {
+        posts,
+        pagination: {
+          total,
+          page,
+          pages: Math.ceil(total / limit),
+        }
+      };
+    }, 180); // Cache for 3 minutes
+
+    return successResponse(res, result, 'All user posts fetched');
+  } catch (error) {
+    return errorResponse(res, 'Failed to fetch posts', 500, error.message);
+  }
+};
+
 
 // Toggle like on a post
 const toggleLike = [
@@ -523,13 +550,6 @@ const getCombinedFeed = asyncHandler(async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
-
-    // Import all required post models
-    const SanghPost = require('../../models/SanghModels/sanghPostModel');
-    const PanchPost = require('../../models/SanghModels/panchPostModel');
-    const VyaparPost = require('../../models/VyaparModels/vyaparPostModel');
-    const TirthPost = require('../../models/TirthModels/tirthPostModel');
-    const SadhuPost = require('../../models/SadhuModels/sadhuPostModel');
 
     // Get all posts from different models with Promise.all for parallel execution
     const [userPosts, sanghPosts, panchPosts, vyaparPosts, tirthPosts, sadhuPosts] = await Promise.all([

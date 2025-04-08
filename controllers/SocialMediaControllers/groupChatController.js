@@ -4,7 +4,7 @@ const path = require('path');
 const { getIo } = require('../../websocket/socket');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
-const { getOrSetCache, invalidateCache } = require('../../utils/cache');
+const { getOrSetCache, invalidateCache,invalidatePattern } = require('../../utils/cache');
 
 
 // 1. Create Group Chat
@@ -34,6 +34,11 @@ exports.createGroupChat = async (req, res) => {
       admins: [creator]
     });
     await newGroup.save();
+
+    await Promise.all([
+      invalidatePattern(`userGroups:*`), // Invalidate all users' group lists
+      invalidateCache(`groupMembers:${newGroup._id}`)
+    ]);
 
 
     const groupForSocket = {
@@ -74,10 +79,14 @@ exports.createGroupChat = async (req, res) => {
 exports.getGroupDetails = async (req, res) => {
   try {
     const { groupId } = req.params;
-    const group = await GroupChat.findById(groupId)
-      .populate('groupMembers.user', 'firstName lastName profilePicture')
-      .populate('creator', 'firstName lastName profilePicture')
-      .populate('admins', 'firstName lastName profilePicture');
+    const cacheKey = `group:${groupId}`;
+
+    const group = await getOrSetCache(cacheKey, async () => {
+      return await GroupChat.findById(groupId)
+        .populate('groupMembers.user', 'firstName lastName profilePicture')
+        .populate('creator', 'firstName lastName profilePicture')
+        .populate('admins', 'firstName lastName profilePicture');
+    }, 300); // Cache for 5 minutes
 
     if (!group) {
       return errorResponse(res, "Group not found", 404);
@@ -92,11 +101,15 @@ exports.getGroupDetails = async (req, res) => {
 exports.getAllGroups = async (req, res) => {
   try {
     const userId = req.user._id;
-    const groups = await GroupChat.find({
-      'groupMembers.user': userId
-    })
-    .populate('groupMembers.user', 'firstName lastName profilePicture')
-    .populate('creator', 'firstName lastName profilePicture');
+    const cacheKey = `userGroups:${userId}`;
+
+    const groups = await getOrSetCache(cacheKey, async () => {
+      return await GroupChat.find({
+        'groupMembers.user': userId
+      })
+      .populate('groupMembers.user', 'firstName lastName profilePicture')
+      .populate('creator', 'firstName lastName profilePicture');
+    }, 180); // Cache for 3 minutes
     
     return successResponse(res, groups, "", 200);
   } catch (error) {
@@ -177,6 +190,12 @@ exports.sendGroupMessage = async (req, res) => {
     group.groupMessages.push(newMessage);
     await group.save();
 
+    await Promise.all([
+      invalidatePattern(`groupMessages:${groupId}:*`), // All paginated messages
+      invalidateCache(`group:${groupId}`), // Group details
+      invalidateCache(`groupMessages:${groupId}:lastMessage`)
+    ]);
+
     // Get the last message (the one we just added)
     const sentMessage = group.groupMessages[group.groupMessages.length - 1];
     const senderInfo = group.groupMembers.find(
@@ -247,46 +266,41 @@ exports.getGroupMessages = async (req, res) => {
     const userId = req.user._id;
     
     const skip = (page - 1) * limit;
+    const cacheKey = `groupMessages:${groupId}:page:${page}:limit:${limit}`;
 
-    const group = await GroupChat.findById(groupId)
-      .populate({
-        path: 'groupMessages.sender',
-        select: 'firstName lastName profilePicture'
-      })
-      .slice('groupMessages', [skip, parseInt(limit)]);
+    const result = await getOrSetCache(cacheKey, async () => {
+      const group = await GroupChat.findById(groupId)
+        .populate({
+          path: 'groupMessages.sender',
+          select: 'firstName lastName profilePicture'
+        })
+        .slice('groupMessages', [skip, parseInt(limit)]);
 
-    if (!group) {
+      if (!group) return null;
+
+      // Mark messages as read for this user
+      group.groupMessages.forEach(msg => {
+        if (!msg.readBy.some(read => read.user.toString() === userId.toString())) {
+          msg.readBy.push({ user: userId, readAt: new Date() });
+        }
+      });
+      await group.save();
+
+      return {
+        messages: group.groupMessages.map(msg => msg.toObject()),
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: group.groupMessages.length
+        }
+      };
+    }, 180); // Cache for 3 minutes
+
+    if (!result) {
       return errorResponse(res, "Group not found", 404);
     }
 
-    // Check if user is a group member
-    const isMember = group.groupMembers.some(
-      member => member.user.toString() === userId.toString()
-    );
-
-    if (!isMember) {
-      return errorResponse(res, "Not authorized to view messages", 403);
-    }
-
-    // Mark messages as read for this user
-    group.groupMessages.forEach(msg => {
-      if (!msg.readBy.some(read => read.user.toString() === userId.toString())) {
-        msg.readBy.push({ user: userId, readAt: new Date() });
-      }
-    });
-    await group.save();
-
-    // Messages will be automatically decrypted due to schema getter
-    const messages = group.groupMessages.map(msg => msg.toObject());
-
-    return successResponse(res, {
-      messages,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: group.groupMessages.length
-      }
-    }, "", 200);
+    return successResponse(res, result, "", 200);
   } catch (error) {
     console.error('Get group messages error:', error);
     return errorResponse(res, error.message, 500);
@@ -358,6 +372,13 @@ exports.deleteGroupMessage = async (req, res) => {
     group.groupMessages.pull({ _id: messageId });
     await group.save();
 
+    await Promise.all([
+      invalidatePattern(`groupMessages:${groupId}:*`),
+      invalidateCache(`group:${groupId}`),
+      invalidateCache(`groupMessages:${groupId}:lastMessage`)
+    ]);
+
+
     // Notify group members about message deletion
     const io = getIo();
     group.groupMembers.forEach(member => {
@@ -398,6 +419,12 @@ exports.updateGroupDetails = async (req, res) => {
     }
 
     await group.save();
+
+    await Promise.all([
+      invalidateCache(`group:${groupId}`),
+      invalidatePattern(`userGroups:*`) // Invalidate all users' group lists
+    ]);
+
 
     // Notify group members about update
     const io = getIo();
@@ -668,5 +695,33 @@ exports.updateGroupName = async (req, res) => {
     return successResponse(res, { groupName: group.groupName }, "Group name updated successfully", 200);
   } catch (error) {
     return errorResponse(res, error.message, 500);
+  }
+};
+
+// Get unread message summary per group for a user
+exports.getUnreadGroupSummary = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const groups = await GroupChat.find({ 'groupMembers.user': userId })
+      .select('_id groupMessages')
+      .lean();
+
+    const unreadSummary = groups.map(group => {
+      const unreadCount = group.groupMessages.reduce((count, msg) => {
+        const alreadyRead = msg.readBy?.some(read => read.user.toString() === userId.toString());
+        return alreadyRead ? count : count + 1;
+      }, 0);
+
+      return {
+        groupId: group._id,
+        unreadCount
+      };
+    });
+
+    return successResponse(res, unreadSummary, 'Unread group summary');
+  } catch (error) {
+    console.error('Error fetching unread group summary:', error);
+    return errorResponse(res, 'Failed to fetch unread group summary', 500);
   }
 };

@@ -13,7 +13,8 @@ const {
   updateGroupIcon,
   checkMembership,
   addMembers,
-  updateGroupName
+  updateGroupName,
+  getUnreadGroupSummary
 } = require('../../controllers/SocialMediaControllers/groupChatController');
 const { authenticate } = require('../../middlewares/authMiddlewares');
 const upload = require('../../middlewares/uploadMiddleware');
@@ -66,6 +67,9 @@ router.get('/messages/:groupId', getGroupMessages);
 
 // Delete group message
 router.delete('/messages/:groupId/:messageId', deleteGroupMessage);
+
+//Unread Messages
+router.get('/unread-summary', getUnreadGroupSummary);
 
 // Update group details (name, image, members)
 router.put('/update/:groupId', upload.single('groupImage'), updateGroupDetails);
