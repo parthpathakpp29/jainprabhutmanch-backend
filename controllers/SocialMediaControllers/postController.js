@@ -63,7 +63,7 @@ const createPost = [
     user.posts.push(post._id);
     await user.save();
 
-    await invalidatePattern(`userPosts:${userId}:*`); // Invalidate all paginated user post caches
+ (`userPosts:${userId}:*`); // Invalidate all paginated user post caches
     await invalidateCache('combinedFeed:*'); // Invalidate all feed variations
     await invalidateCache('combinedFeed:firstPage:limit:10');
 
@@ -286,7 +286,7 @@ const deletePost = [
     await user.save();
     await post.deleteOne();
     await invalidateCache(`post:${postId}`);
-    await invalidatePattern(`userPosts:${userId}:*`);
+ (`userPosts:${userId}:*`);
     await invalidateCache('combinedFeed:*');
     await invalidateCache('combinedFeed:firstPage:limit:10');
 
@@ -365,7 +365,7 @@ const editPost = [
 
     await invalidateCache('combinedFeed:firstPage:limit:10');
     await invalidateCache(`post:${postId}`);
-    await invalidatePattern(`userPosts:${userId}:*`);
+ (`userPosts:${userId}:*`);
     await invalidateCache('combinedFeed:*');
 
     return successResponse(res, post, 'Post updated successfully', 200);

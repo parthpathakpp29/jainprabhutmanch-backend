@@ -45,7 +45,7 @@ const createPost = async (req, res) => {
     const post = new JainVyaparPost(postData);
     await post.save();
     await invalidateCache(`vyaparPosts:${req.params.vyaparId}:page:1:limit:10`);
-    await invalidatePattern(`vyaparPosts:${vyaparId}:*`);
+
     await invalidateCache(`vyapar:${vyaparId}:stats`);
 
     return successResponse(res, {
@@ -211,7 +211,7 @@ const updatePost = async (req, res) => {
     await post.save();
     await invalidateCache(`vyaparPosts:${req.params.vyaparId}:page:1:limit:10`);
     await invalidateCache(`vyaparPost:${postId}`);
-    await invalidatePattern(`vyaparPosts:${post.vyaparId}:*`);
+ 
     return successResponse(res, {
       message: 'Post updated successfully',
       post
@@ -260,7 +260,7 @@ const deletePost = async (req, res) => {
     // ✅ Invalidate cache
     await invalidateCache(`vyaparPosts:${req.params.vyaparId}:page:1:limit:10`);
     await invalidateCache(`vyaparPost:${postId}`);
-    await invalidatePattern(`vyaparPosts:${post.vyaparId}:*`);
+ 
 
     return successResponse(res, {
       message: 'Post deleted successfully'

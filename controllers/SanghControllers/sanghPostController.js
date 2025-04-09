@@ -54,7 +54,7 @@ const createSanghPost = asyncHandler(async (req, res) => {
       .populate('sanghId', 'name level location')
       .populate('postedByUserId', 'firstName lastName fullName profilePicture');
       await invalidateCache(`sanghPosts:page:1:limit:10`);
-      await invalidatePattern(`sanghPosts:${sanghId}:*`);
+ 
 await invalidatePattern('allSanghPosts:*');
 await invalidateCache(`sangh:${sanghId}:stats`);
 

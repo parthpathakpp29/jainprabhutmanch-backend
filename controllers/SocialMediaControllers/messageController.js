@@ -95,8 +95,8 @@ await invalidateCache(`conversation:${receiver}:${sender}`);
         profilePicture: senderUser.profilePicture
       }
     });
-    await invalidatePattern(`messages:${sender}:${receiver}:page:*`);
-    await invalidatePattern(`messages:${receiver}:${sender}:page:*`); 
+   
+
 
 
     return successResponse(res, {
@@ -153,8 +153,7 @@ exports.deleteMessageById = async (req, res) => {
     await message.deleteOne();
     const sender = message.sender.toString();
     const receiver = message.receiver.toString();
-    await invalidatePattern(`messages:${sender}:${receiver}:page:*`);
-    await invalidatePattern(`messages:${receiver}:${sender}:page:*`);
+   
 
     // Notify other user about message deletion
     const io = getIo();

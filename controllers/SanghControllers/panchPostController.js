@@ -50,8 +50,8 @@ const createPanchPost = asyncHandler(async (req, res) => {
       .populate('panchId', 'accessId')
       .populate('sanghId', 'name level location');
     await invalidateCache('panchPosts:page:1:limit:10')
-    await invalidatePattern(`panchPosts:${panchGroup._id}:*`);
-    await invalidatePattern('allPanchPosts:*');
+
+
     await invalidateCache(`panch:${panchGroup._id}:stats`);
 
     return successResponse(res, populatedPost, 'Post created successfully', 201);
@@ -313,8 +313,8 @@ const deletePanchPost = asyncHandler(async (req, res) => {
     await invalidateCache('panchPosts:page:1:limit:10')
     // In deletePanchPost (after deletion):
     await invalidateCache(`panchPost:${postId}`);
-    await invalidatePattern(`panchPosts:${post.panchId}:*`);
-    await invalidatePattern('allPanchPosts:*');
+
+
     return successResponse(res, null, 'Post deleted successfully');
   } catch (error) {
     return errorResponse(res, error.message, 500);
@@ -373,8 +373,8 @@ const updatePanchPost = asyncHandler(async (req, res) => {
     post.caption = caption;
     await post.save();
     await invalidateCache(`panchPost:${postId}`);
-    await invalidatePattern(`panchPosts:${post.panchId}:*`);
-    await invalidatePattern('allPanchPosts:*');
+
+  
 
     const updatedPost = await PanchPost.findById(postId)
       .populate('panchId', 'accessId')
