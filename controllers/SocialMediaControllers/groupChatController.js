@@ -262,36 +262,66 @@ exports.sendGroupMessage = async (req, res) => {
 exports.getGroupMessages = async (req, res) => {
   try {
     const { groupId } = req.params;
-    const { page = 1, limit = 20 } = req.query;
+    const { limit = 10, cursor } = req.query;
     const userId = req.user._id;
     
-    const skip = (page - 1) * limit;
-    const cacheKey = `groupMessages:${groupId}:page:${page}:limit:${limit}`;
+    const cacheKey = cursor
+      ? `groupMessages:${groupId}:cursor:${cursor}:limit:${limit}`
+      : `groupMessages:${groupId}:recent:limit:${limit}`;
 
     const result = await getOrSetCache(cacheKey, async () => {
-      const group = await GroupChat.findById(groupId)
-        .populate({
-          path: 'groupMessages.sender',
-          select: 'firstName lastName profilePicture'
-        })
-        .slice('groupMessages', [skip, parseInt(limit)]);
-
+      // First find the group
+      const group = await GroupChat.findById(groupId);
       if (!group) return null;
-
+      
+      // Determine starting index based on cursor
+      let startIndex = 0;
+      const intLimit = parseInt(limit);
+      
+      if (cursor) {
+        // Find the index of the message with the cursor timestamp
+        const cursorDate = new Date(cursor);
+        const cursorIndex = group.groupMessages.findIndex(
+          msg => msg.createdAt.getTime() < cursorDate.getTime()
+        );
+        
+        if (cursorIndex !== -1) {
+          startIndex = cursorIndex;
+        }
+      } else {
+        // For recent messages, start from the end and go backwards
+        startIndex = Math.max(0, group.groupMessages.length - intLimit);
+      }
+      
+      // Get the messages slice
+      const messagesSlice = group.groupMessages
+        .slice(startIndex, startIndex + intLimit)
+        .sort((a, b) => a.createdAt - b.createdAt);
+      
+      // Populate the sender information (can't use slice with populate)
+      await GroupChat.populate(messagesSlice, {
+        path: 'sender',
+        select: 'firstName lastName profilePicture'
+      });
+      
       // Mark messages as read for this user
-      group.groupMessages.forEach(msg => {
+      messagesSlice.forEach(msg => {
         if (!msg.readBy.some(read => read.user.toString() === userId.toString())) {
           msg.readBy.push({ user: userId, readAt: new Date() });
         }
       });
       await group.save();
-
+      
+      // Determine next cursor
+      const nextCursor = messagesSlice.length > 0 && messagesSlice.length === intLimit
+        ? messagesSlice[0].createdAt.toISOString()
+        : null;
+        
       return {
-        messages: group.groupMessages.map(msg => msg.toObject()),
+        messages: messagesSlice.map(msg => msg.toObject()),
         pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total: group.groupMessages.length
+          nextCursor,
+          hasMore: startIndex > 0
         }
       };
     }, 180); // Cache for 3 minutes
@@ -300,13 +330,12 @@ exports.getGroupMessages = async (req, res) => {
       return errorResponse(res, "Group not found", 404);
     }
 
-    return successResponse(res, result, "", 200);
+    return successResponse(res, result, "Group messages retrieved", 200);
   } catch (error) {
     console.error('Get group messages error:', error);
     return errorResponse(res, error.message, 500);
   }
 };
-
 // 6. Delete Group Message
 exports.deleteGroupMessage = async (req, res) => {
   try {

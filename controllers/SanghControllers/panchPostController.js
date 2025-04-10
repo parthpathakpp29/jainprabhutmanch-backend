@@ -144,34 +144,42 @@ const getPanchPosts = asyncHandler(async (req, res) => {
 
 const getAllPanchPosts = asyncHandler(async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-
-    const cacheKey = `allPanchPosts:page:${page}:limit:${limit}`;
-
+    const limit = parseInt(req.query.limit) || 5;
+    const cursor = req.query.cursor;
+    
+    const cacheKey = cursor 
+      ? `allPanchPosts:cursor:${cursor}:limit:${limit}` 
+      : `allPanchPosts:firstPage:limit:${limit}`;
+    
     const result = await getOrSetCache(cacheKey, async () => {
-      const skip = (page - 1) * limit;
-      const [posts, total] = await Promise.all([
-        PanchPost.find({ isHidden: false })
-          .populate('panchId', 'accessId')
-          .populate('sanghId', 'name level location')
-          .sort('-createdAt')
-          .skip(skip)
-          .limit(limit)
-          .lean(),
-        PanchPost.countDocuments({ isHidden: false })
-      ]);
-
+      // Build query condition
+      const condition = { isHidden: false };
+      if (cursor) {
+        condition.createdAt = { $lt: new Date(cursor) };
+      }
+      
+      const posts = await PanchPost.find(condition)
+        .populate('panchId', 'accessId')
+        .populate('sanghId', 'name level location')
+        .sort('-createdAt')
+        .limit(limit)
+        .lean();
+      
+      // Get next cursor from the last post's timestamp
+      const nextCursor = posts.length > 0 
+        ? posts[posts.length - 1].createdAt.toISOString() 
+        : null;
+      
       return {
         posts,
         pagination: {
-          total,
-          page,
-          pages: Math.ceil(total / limit)
+          nextCursor,
+          hasMore: posts.length === limit
         }
       };
     }, 300); // Cache for 5 minutes
-
+    
+    // Convert S3 URLs to CDN URLs
     result.posts = result.posts.map(post => ({
       ...post,
       media: post.media.map(m => ({
@@ -180,13 +188,11 @@ const getAllPanchPosts = asyncHandler(async (req, res) => {
       }))
     }));
     
-
     return successResponse(res, result, 'Panch posts retrieved successfully');
   } catch (error) {
     return errorResponse(res, error.message, 500);
   }
 });
-
 
 // Toggle like on a Panch post
 const toggleLikePanchPost = asyncHandler(async (req, res) => {

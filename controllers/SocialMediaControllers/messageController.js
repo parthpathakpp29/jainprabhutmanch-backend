@@ -169,47 +169,61 @@ exports.deleteMessageById = async (req, res) => {
 
 exports.getMessages = async (req, res) => {
   try {
-    const { sender, receiver, page = 1, limit = 20 } = req.query;
+    const { sender, receiver, limit = 20, cursor } = req.query;
 
     if (!sender || !receiver) {
       return errorResponse(res, 'Sender and receiver are required', 400);
     }
 
-    const skip = (page - 1) * limit;
-    const cacheKey = `messages:${sender}:${receiver}:page:${page}:limit:${limit}`;
+    const cacheKey = cursor 
+      ? `messages:${sender}:${receiver}:cursor:${cursor}:limit:${limit}`
+      : `messages:${sender}:${receiver}:recent:limit:${limit}`;
 
     const result = await getOrSetCache(cacheKey, async () => {
-      const messages = await Message.find({
+      // Base query condition
+      const queryCondition = {
         $or: [
           { sender, receiver },
           { sender: receiver, receiver: sender },
-        ],
-      })
+        ]
+      };
+
+      // Add cursor condition if provided
+      if (cursor) {
+        queryCondition.createdAt = { $lt: new Date(cursor) };
+      }
+
+      const messages = await Message.find(queryCondition)
         .sort({ createdAt: -1 })
-        .skip(skip)
         .limit(parseInt(limit))
         .populate('sender', 'fullName profilePicture')
         .populate('receiver', 'fullName profilePicture');
 
-      // Mark messages as read
-      await Message.updateMany(
-        { sender: receiver, receiver: sender, isRead: false },
-        { isRead: true }
-      );
+      // Mark messages as read (only for recent messages)
+      if (!cursor) {
+        await Message.updateMany(
+          { sender: receiver, receiver: sender, isRead: false },
+          { isRead: true }
+        );
+      }
+
+      // Get the oldest timestamp for next cursor
+      const nextCursor = messages.length > 0 
+        ? messages[messages.length - 1].createdAt.toISOString() 
+        : null;
 
       return {
         messages: messages.reverse(), // chronological order
         pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit)
+          nextCursor,
+          hasMore: messages.length === parseInt(limit)
         }
       };
     }, 180); // TTL 3 mins
 
-    // Emit read receipt (optional, keep if needed)
+    // Emit read receipt
     const io = getIo();
     io.to(receiver.toString()).emit('messagesRead', { sender, receiver });
-
   
     const senderStatus = getUserStatus(sender);
     const receiverStatus = getUserStatus(receiver);
@@ -287,8 +301,10 @@ exports.getConversations = async (req, res) => {
         participants: userId
       })
       .populate('participants', 'fullName profilePicture')
-      .sort({ updatedAt: -1 });
-    }, 60); // Cache for 1 minute
+      .populate('lastMessage')  
+      .sort({ updatedAt: -1 });  
+    }, 60); 
+
     if (!conversations || conversations.length === 0) {
       return errorResponse(res, 'No conversations found', 404);
     }

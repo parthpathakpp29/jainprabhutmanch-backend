@@ -587,33 +587,42 @@ const toggleHidePost = async (req, res) => {
 
 const getAllVyaparPosts = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-
-    const cacheKey = `allVyaparPosts:page:${page}:limit:${limit}`;
-
+    const limit = parseInt(req.query.limit) || 5;
+    const cursor = req.query.cursor; // timestamp of the oldest post from previous batch
+    
+    const cacheKey = cursor 
+      ? `allVyaparPosts:cursor:${cursor}:limit:${limit}` 
+      : `allVyaparPosts:firstPage:limit:${limit}`;
+    
     const result = await getOrSetCache(cacheKey, async () => {
-      const posts = await JainVyaparPost.find({ isHidden: false })
+      // Build query condition
+      const condition = { isHidden: false };
+      if (cursor) {
+        condition.createdAt = { $lt: new Date(cursor) };
+      }
+      
+      const posts = await JainVyaparPost.find(condition)
         .populate('vyaparId', 'name businessType')
         .populate('postedByUserId', 'firstName lastName profilePicture')
         .sort('-createdAt')
-        .skip(skip)
         .limit(limit)
         .lean();
-
-      const total = await JainVyaparPost.countDocuments({ isHidden: false });
-
+      
+      // Get next cursor from the last post's timestamp
+      const nextCursor = posts.length > 0 
+        ? posts[posts.length - 1].createdAt.toISOString() 
+        : null;
+      
       return {
         posts,
         pagination: {
-          total,
-          page,
-          pages: Math.ceil(total / limit)
+          nextCursor,
+          hasMore: posts.length === limit
         }
       };
     }, 180);
-
+    
+    // Convert S3 URLs to CDN URLs
     result.posts = result.posts.map(post => ({
       ...post,
       media: post.media.map(m => ({
@@ -621,9 +630,8 @@ const getAllVyaparPosts = async (req, res) => {
         url: convertS3UrlToCDN(m.url)
       }))
     }));
-
-
-    return successResponse(res, result, 'All Vyapar posts fetched');
+    
+    return successResponse(res, result, 'Vyapar posts fetched');
   } catch (error) {
     return errorResponse(res, 'Failed to fetch Vyapar posts', 500, error.message);
   }

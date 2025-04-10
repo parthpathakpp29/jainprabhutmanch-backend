@@ -153,46 +153,62 @@ const getPostById = [
 // Get all posts
 const getAllPosts = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
+    const limit = parseInt(req.query.limit) || 10;  // Limit per page (number of posts per request)
+    const cursor = req.query.cursor;  // The cursor (last post timestamp) to get the next batch of posts
 
-    const cacheKey = `allUserPosts:page:${page}:limit:${limit}`;
+    const cacheKey = cursor
+      ? `allUserPosts:cursor:${cursor}:limit:${limit}`  // Cache key with cursor
+      : `allUserPosts:firstPage:limit:${limit}`;  // Cache key for first page
 
     const result = await getOrSetCache(cacheKey, async () => {
-      const posts = await Post.find({ isHidden: false })
+      const cursorQuery = cursor ? { createdAt: { $lt: new Date(cursor) } } : {};  // Only get posts older than the cursor
+
+      // Fetch posts based on cursor, sort by creation date descending
+      const posts = await Post.find({ ...cursorQuery, isHidden: false })
         .populate('user', 'firstName lastName profilePicture')
         .sort({ createdAt: -1 })
-        .skip(skip)
         .limit(limit)
         .lean();
 
-      const total = await Post.countDocuments({ isHidden: false });
+      // If no posts are found, return an empty result
+      if (!posts || posts.length === 0) {
+        return {
+          posts: [],
+          pagination: { nextCursor: null, hasMore: false },
+        };
+      }
 
+      // Get the timestamp of the last post to use as the next cursor
+      const nextCursor = posts.length > 0
+        ? posts[posts.length - 1].createdAt.toISOString()  // Timestamp of the last post
+        : null;
+
+      // Return the posts and pagination data (nextCursor)
       return {
         posts,
         pagination: {
-          total,
-          page,
-          pages: Math.ceil(total / limit),
+          nextCursor,
+          hasMore: posts.length === limit,  // If number of posts equals the limit, there are more posts
         }
       };
     }, 180); // Cache for 3 minutes
 
+    // Convert S3 URLs to CDN URLs
     result.posts = result.posts.map(post => ({
       ...post,
       media: post.media.map(m => ({
         ...m,
-        url: convertS3UrlToCDN(m.url)
-      }))
+        url: convertS3UrlToCDN(m.url),
+      })),
     }));
-    
+
     return successResponse(res, result, 'All user posts fetched');
     
   } catch (error) {
     return errorResponse(res, 'Failed to fetch posts', 500, error.message);
   }
 };
+
 
 // Toggle like on a post
 const toggleLike = [
